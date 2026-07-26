@@ -48,23 +48,65 @@ internal sealed class ScheduleEvaluator
         if (available.Count == 0)
             return false;
 
-        List<string> choices = available.Count > 1 && !string.IsNullOrWhiteSpace(selectedRule.LastOutfitName)
-            ? available.Where(name => !name.Equals(selectedRule.LastOutfitName, StringComparison.OrdinalIgnoreCase)).ToList()
-            : available;
-        if (choices.Count == 0)
-            choices = available;
+        string currentDayKey = GetCurrentDayKey();
+        string? lockedOutfit = selectedRule.ChangeFrequency == ScheduleChangeFrequency.OncePerDay
+            && selectedRule.LockedDayKey.Equals(currentDayKey, StringComparison.Ordinal)
+            ? available.FirstOrDefault(name => name.Equals(selectedRule.LockedOutfitName, StringComparison.OrdinalIgnoreCase))
+            : null;
 
-        string outfitName = choices[_random.Next(choices.Count)];
+        string outfitName;
+        bool newDailySelection = lockedOutfit is null
+            && selectedRule.ChangeFrequency == ScheduleChangeFrequency.OncePerDay;
+        if (lockedOutfit is not null)
+        {
+            outfitName = lockedOutfit;
+        }
+        else
+        {
+            List<string> choices = available.Count > 1 && !string.IsNullOrWhiteSpace(selectedRule.LastOutfitName)
+                ? available.Where(name => !name.Equals(selectedRule.LastOutfitName, StringComparison.OrdinalIgnoreCase)).ToList()
+                : available;
+            if (choices.Count == 0)
+                choices = available;
+
+            outfitName = choices[_random.Next(choices.Count)];
+        }
+
         if (_renderer.EquipOutfitImmediately(outfitName))
         {
-            selectedRule.LastOutfitName = outfitName;
-            _manager.SaveRules(rules);
+            bool selectionStateChanged = false;
+            if (!selectedRule.LastOutfitName.Equals(outfitName, StringComparison.OrdinalIgnoreCase))
+            {
+                selectedRule.LastOutfitName = outfitName;
+                selectionStateChanged = true;
+            }
+
+            if (newDailySelection)
+            {
+                selectedRule.LockedOutfitName = outfitName;
+                selectedRule.LockedDayKey = currentDayKey;
+                selectionStateChanged = true;
+            }
+            else if (selectedRule.ChangeFrequency == ScheduleChangeFrequency.EveryActivation
+                && (!string.IsNullOrEmpty(selectedRule.LockedOutfitName)
+                    || !string.IsNullOrEmpty(selectedRule.LockedDayKey)))
+            {
+                selectedRule.LockedOutfitName = string.Empty;
+                selectedRule.LockedDayKey = string.Empty;
+                selectionStateChanged = true;
+            }
+
+            if (selectionStateChanged)
+                _manager.SaveRules(rules);
             _monitor.Log($"Schedule equipped Fashion Sense outfit '{outfitName}'.", LogLevel.Trace);
             return true;
         }
 
         return false;
     }
+
+    private static string GetCurrentDayKey()
+        => $"{Game1.year}:{Game1.currentSeason}:{Game1.dayOfMonth}";
 
     public string? GetWinningRuleId(IEnumerable<OutfitScheduleRule> rules)
     {

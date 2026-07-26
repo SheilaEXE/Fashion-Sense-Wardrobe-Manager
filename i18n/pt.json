@@ -157,6 +157,9 @@
   "ui.schedule.name_title": "Nome do cronograma",
   "ui.schedule.active_now": "Ativo agora",
   "ui.schedule.waiting": "Em espera",
+  "ui.schedule.change_frequency": "Frequência de troca",
+  "ui.schedule.fixed_for_day": "Fixo durante o dia",
+  "ui.schedule.random_during_day": "Aleatório durante o dia",
   "ui.button.delete_outfits": "Excluir",
   "ui.confirm.delete_saved_outfits.title": "Excluir Outfits",
   "ui.confirm.delete_saved_outfits.msg": "Excluir {{count}} outfit(s) salvo(s)?\nIsso não pode ser desfeito."

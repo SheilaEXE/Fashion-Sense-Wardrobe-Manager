@@ -60,6 +60,12 @@ internal sealed class ScheduleManager
                 rule.LastOutfitName = newName;
                 changed = true;
             }
+
+            if (rule.LockedOutfitName.Equals(oldName, StringComparison.OrdinalIgnoreCase))
+            {
+                rule.LockedOutfitName = newName;
+                changed = true;
+            }
         }
 
         if (changed)
@@ -80,6 +86,12 @@ internal sealed class ScheduleManager
                 rule.LastOutfitName = string.Empty;
                 changed = true;
             }
+            if (removed.Contains(rule.LockedOutfitName))
+            {
+                rule.LockedOutfitName = string.Empty;
+                rule.LockedDayKey = string.Empty;
+                changed = true;
+            }
         }
 
         if (changed)
@@ -93,6 +105,18 @@ internal sealed class ScheduleManager
         if (rule.Name.Length > 32)
             rule.Name = rule.Name[..32];
         rule.LastOutfitName = (rule.LastOutfitName ?? string.Empty).Trim();
+        rule.LockedOutfitName = (rule.LockedOutfitName ?? string.Empty).Trim();
+        rule.LockedDayKey = (rule.LockedDayKey ?? string.Empty).Trim();
+        if (rule.ChangeFrequency is not ScheduleChangeFrequency.OncePerDay
+            and not ScheduleChangeFrequency.EveryActivation)
+        {
+            rule.ChangeFrequency = ScheduleChangeFrequency.OncePerDay;
+        }
+        if (rule.ChangeFrequency == ScheduleChangeFrequency.EveryActivation)
+        {
+            rule.LockedOutfitName = string.Empty;
+            rule.LockedDayKey = string.Empty;
+        }
         rule.SingleDay = Math.Clamp(rule.SingleDay, 1, 28);
         rule.Days = rule.Days
             .Where(day => day is >= 1 and <= 28)

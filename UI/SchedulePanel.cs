@@ -41,6 +41,7 @@ internal sealed class SchedulePanel
     private Rectangle _addButton;
     private Rectangle _enabledButton;
     private Rectangle _nameButton;
+    private Rectangle _changeFrequencyButton;
     private Rectangle _dayModeButton;
     private Rectangle _singleDayDownButton;
     private Rectangle _singleDayUpButton;
@@ -308,6 +309,12 @@ internal sealed class SchedulePanel
             _nameEditRuleId = selected.Id;
             Game1.playSound("smallSelect");
             return true;
+        }
+        else if (_changeFrequencyButton.Contains(x, y))
+        {
+            selected.ChangeFrequency = Next(selected.ChangeFrequency);
+            selected.LockedOutfitName = string.Empty;
+            selected.LockedDayKey = string.Empty;
         }
         else if (_festivalButton.Contains(x, y))
         {
@@ -594,6 +601,8 @@ internal sealed class SchedulePanel
 
             if (rule.LastOutfitName.Equals(oldName, StringComparison.OrdinalIgnoreCase))
                 rule.LastOutfitName = newName;
+            if (rule.LockedOutfitName.Equals(oldName, StringComparison.OrdinalIgnoreCase))
+                rule.LockedOutfitName = newName;
         }
 
         Save();
@@ -607,6 +616,11 @@ internal sealed class SchedulePanel
             rule.OutfitNames.RemoveAll(removed.Contains);
             if (removed.Contains(rule.LastOutfitName))
                 rule.LastOutfitName = string.Empty;
+            if (removed.Contains(rule.LockedOutfitName))
+            {
+                rule.LockedOutfitName = string.Empty;
+                rule.LockedDayKey = string.Empty;
+            }
         }
         Save();
     }
@@ -725,7 +739,7 @@ internal sealed class SchedulePanel
         int extraTimeRowsHeight = Math.Max(0, chipRows - 1) * 46;
 
         bool festivalRule = rule.Section == ScheduleSection.Festivals;
-        int contentHeight = 18 + 58 + 76 + 88 + (!festivalRule && rule.DayMode == ScheduleDayMode.Multiple ? 76 : 0)
+        int contentHeight = 18 + 58 + 76 + 76 + 88 + (!festivalRule && rule.DayMode == ScheduleDayMode.Multiple ? 76 : 0)
             + 88 + 90 + extraTimeRowsHeight + 54 + Math.Max(1, outfitLines.Count) * 26 + 16;
         _editorMaxScroll = Math.Max(0, contentHeight - _editorViewport.Height);
         _editorScrollPixels = Math.Clamp(_editorScrollPixels, 0, _editorMaxScroll);
@@ -772,6 +786,11 @@ internal sealed class SchedulePanel
         DrawEditorLabel(b, I18n.ScheduleNameOptional, x, y);
         _nameButton = new Rectangle(x, y + 28, Math.Min(420, _editorViewport.Width - 16), fieldH);
         DrawEditorButton(b, _nameButton, GetRuleDisplayName(rule), Color.Wheat);
+        y += 76;
+
+        DrawEditorLabel(b, I18n.ScheduleChangeFrequency, x, y);
+        _changeFrequencyButton = new Rectangle(x, y + 28, Math.Min(420, _editorViewport.Width - 16), fieldH);
+        DrawEditorButton(b, _changeFrequencyButton, ChangeFrequencyLabel(rule.ChangeFrequency), Color.LightBlue);
         y += 76;
 
         int col2 = secondColumnX;
@@ -1225,6 +1244,13 @@ internal sealed class SchedulePanel
         SchedulePeriod.Afternoon => I18n.ScheduleAfternoon,
         SchedulePeriod.Night => I18n.ScheduleNight,
         _ => string.Empty
+    };
+
+    private static string ChangeFrequencyLabel(ScheduleChangeFrequency frequency) => frequency switch
+    {
+        ScheduleChangeFrequency.OncePerDay => I18n.ScheduleFixedForDay,
+        ScheduleChangeFrequency.EveryActivation => I18n.ScheduleRandomDuringDay,
+        _ => I18n.ScheduleFixedForDay
     };
 
     private static string DaySummary(OutfitScheduleRule rule) => rule.DayMode switch

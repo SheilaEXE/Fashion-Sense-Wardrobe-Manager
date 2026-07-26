@@ -202,4 +202,7 @@ internal static class I18n
     public static string ScheduleNameTitle    => Get("ui.schedule.name_title");
     public static string ScheduleActiveNow    => Get("ui.schedule.active_now");
     public static string ScheduleWaiting      => Get("ui.schedule.waiting");
+    public static string ScheduleChangeFrequency => Get("ui.schedule.change_frequency");
+    public static string ScheduleFixedForDay => Get("ui.schedule.fixed_for_day");
+    public static string ScheduleRandomDuringDay => Get("ui.schedule.random_during_day");
 }

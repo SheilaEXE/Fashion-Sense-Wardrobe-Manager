@@ -1,8 +1,8 @@
 {
-  "Name": "Fashion Sense Outfit Preview",
+  "Name": "Fashion Sense - Wardrobe Manager",
   "Author": "NatrollEXE",
-  "Version": "1.0.6",
-  "Description": "Adds a preview window for Fashion Sense saved outfits, letting players view outfits before equipping them.",
+  "Version": "1.0.7",
+  "Description": "A complete in-game wardrobe manager for Fashion Sense with outfit previews, organization, filters, tags, and automatic outfit schedules.",
   "UniqueID": "NatrollEXE.FashionSenseOutfitPreview",
   "EntryDll": "FashionSenseOutfitPreview.dll",
   "MinimumApiVersion": "4.0.0",
