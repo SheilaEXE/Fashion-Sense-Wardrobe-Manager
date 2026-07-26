@@ -5,7 +5,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 
-namespace FashionSenseOutfitPreview;
+namespace FashionSenseWardrobeManager;
 
 internal sealed record ScheduleConditionOption(string Id, string Label);
 

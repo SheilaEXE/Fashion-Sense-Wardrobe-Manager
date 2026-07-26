@@ -1,19 +1,53 @@
 using StardewModdingAPI;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Text.Json;
 
-namespace FashionSenseOutfitPreview;
+namespace FashionSenseWardrobeManager;
 
 internal sealed class GlobalOrganizationManager
 {
     private const string GlobalDataKey = "GlobalOutfitOrganization";
+    private const string LegacyUniqueId = "NatrollEXE.FashionSenseOutfitPreview";
 
     private readonly IDataHelper _data;
+    private readonly IMonitor _monitor;
 
-    public GlobalOrganizationManager(IDataHelper data)
+    public GlobalOrganizationManager(IDataHelper data, IMonitor monitor)
     {
         _data = data;
+        _monitor = monitor;
+        MigrateLegacyGlobalData();
+    }
+
+    private void MigrateLegacyGlobalData()
+    {
+        if (_data.ReadGlobalData<GlobalOutfitOrganization>(GlobalDataKey) is not null)
+            return;
+
+        string legacyPath = Path.Combine(
+            Constants.DataPath,
+            ".smapi",
+            "mod-data",
+            LegacyUniqueId.ToLowerInvariant(),
+            $"{GlobalDataKey.ToLowerInvariant()}.json");
+
+        if (!File.Exists(legacyPath))
+            return;
+
+        try
+        {
+            GlobalOutfitOrganization? legacyData = JsonSerializer.Deserialize<GlobalOutfitOrganization>(
+                File.ReadAllText(legacyPath));
+            if (legacyData is not null)
+                _data.WriteGlobalData(GlobalDataKey, legacyData);
+        }
+        catch (Exception ex)
+        {
+            _monitor.Log($"Could not migrate legacy global wardrobe organization: {ex.Message}", LogLevel.Warn);
+        }
     }
 
     public void Export(List<OutfitCategory> categories, List<OutfitTag> tags)

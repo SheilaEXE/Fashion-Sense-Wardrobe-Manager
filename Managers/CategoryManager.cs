@@ -4,32 +4,32 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 
-namespace FashionSenseOutfitPreview;
+namespace FashionSenseWardrobeManager;
 
 /// <summary>
 /// Manages outfit categories, persisting them in the player's modData so they survive across sessions.
-/// Key format: "FashionSenseOutfitPreview.Categories" → JSON-serialized List&lt;OutfitCategory&gt;
+/// Current key: "FashionSenseWardrobeManager.Categories". The previous key is retained for migration.
 /// </summary>
 internal sealed class CategoryManager
 {
-    private const string ModDataKey = "FashionSenseOutfitPreview.Categories";
+    private const string ModDataKey = "FashionSenseWardrobeManager.Categories";
+    private const string LegacyModDataKey = "FashionSenseOutfitPreview.Categories";
 
     // Public API
 
     /// <summary>Load all categories from the current player's modData.</summary>
     public List<OutfitCategory> LoadCategories()
     {
-        if (!Game1.player.modData.TryGetValue(ModDataKey, out string? json) || string.IsNullOrWhiteSpace(json))
-            return new List<OutfitCategory>();
+        if (TryLoad(ModDataKey, out List<OutfitCategory> categories))
+            return categories;
 
-        try
+        if (TryLoad(LegacyModDataKey, out categories))
         {
-            return JsonSerializer.Deserialize<List<OutfitCategory>>(json) ?? new List<OutfitCategory>();
+            SaveCategories(categories);
+            return categories;
         }
-        catch
-        {
-            return new List<OutfitCategory>();
-        }
+
+        return new List<OutfitCategory>();
     }
 
     /// <summary>Persist the given category list to the current player's modData.</summary>
@@ -99,6 +99,23 @@ internal sealed class CategoryManager
     /// <summary>Return the display names of categories that contain the given outfit.</summary>
     public IEnumerable<string> GetCategoriesForOutfit(List<OutfitCategory> categories, string outfitName)
         => categories.Where(c => c.OutfitNames.Contains(outfitName)).Select(c => c.Name);
+
+    private static bool TryLoad(string key, out List<OutfitCategory> categories)
+    {
+        categories = new List<OutfitCategory>();
+        if (!Game1.player.modData.TryGetValue(key, out string? json) || string.IsNullOrWhiteSpace(json))
+            return false;
+
+        try
+        {
+            categories = JsonSerializer.Deserialize<List<OutfitCategory>>(json) ?? new List<OutfitCategory>();
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
 }
 
 // Data model

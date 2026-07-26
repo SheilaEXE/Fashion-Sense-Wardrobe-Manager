@@ -1,6 +1,6 @@
 using StardewModdingAPI;
 
-namespace FashionSenseOutfitPreview;
+namespace FashionSenseWardrobeManager;
 
 /// <summary>
 /// Thin wrapper around SMAPI's ITranslationHelper.

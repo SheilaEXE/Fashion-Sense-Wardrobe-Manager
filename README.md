@@ -9,7 +9,7 @@ Preview, organize, filter, and automatically schedule your saved Fashion Sense o
 
 Fashion Sense - Wardrobe Manager is a complete wardrobe companion for players with large Fashion Sense outfit collections. It expands the saved-outfit menu with live previews, organization tools, advanced filters, and a visual scheduler that can equip outfits automatically as your farmer goes through the day and year.
 
-The mod was originally released as **Fashion Sense Outfit Preview**. Its name changed as it grew beyond previews into a full wardrobe-management tool. The UniqueID remains unchanged, so existing settings, categories, tags, and schedules continue to work.
+The mod was originally released as **Fashion Sense Outfit Preview**. Its name and technical UniqueID changed as it grew beyond previews into a full wardrobe-management tool. Existing categories, tags, and schedules are migrated automatically from the previous save-data keys.
 
 ## Main Features
 
@@ -50,7 +50,7 @@ The mod was originally released as **Fashion Sense Outfit Preview**. Its name ch
 
 ### Updating from 1.0.6 or earlier
 
-Replace the files inside your existing **Fashion Sense Outfit Preview** mod folder. Do not keep two separate copies of the mod, since both versions use the same UniqueID.
+Delete the entire old **Fashion Sense Outfit Preview** folder before installing this version. Then extract the new **Fashion Sense Wardrobe Manager** folder into `Mods`. Do not merge the folders or keep both copies: the old and new releases have different UniqueIDs and SMAPI may load both at the same time.
 
 ## How to Use
 
@@ -72,7 +72,7 @@ Replace the files inside your existing **Fashion Sense Outfit Preview** mod fold
 
 - Weather conditions added by other mods can be used by the scheduler when exposed through Stardew Valley's weather data.
 - Festivals added by other mods can optionally be displayed in the festival selector.
-- The technical UniqueID remains `NatrollEXE.FashionSenseOutfitPreview` for save-data and update compatibility.
+- The technical UniqueID is `NatrollEXE.FashionSenseWardrobeManager`. Categories, tags, and schedules created under the previous `NatrollEXE.FashionSenseOutfitPreview` identity are migrated automatically when each save is loaded.
 
 ## Links
 

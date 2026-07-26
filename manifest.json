@@ -3,8 +3,8 @@
   "Author": "NatrollEXE",
   "Version": "1.0.7",
   "Description": "A complete in-game wardrobe manager for Fashion Sense with outfit previews, organization, filters, tags, and automatic outfit schedules.",
-  "UniqueID": "NatrollEXE.FashionSenseOutfitPreview",
-  "EntryDll": "FashionSenseOutfitPreview.dll",
+  "UniqueID": "NatrollEXE.FashionSenseWardrobeManager",
+  "EntryDll": "FashionSenseWardrobeManager.dll",
   "MinimumApiVersion": "4.0.0",
   "UpdateKeys": ["Nexus:45911"],
   "Dependencies": [

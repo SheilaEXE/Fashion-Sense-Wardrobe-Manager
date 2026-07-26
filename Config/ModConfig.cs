@@ -1,6 +1,6 @@
 using StardewModdingAPI;
 
-namespace FashionSenseOutfitPreview;
+namespace FashionSenseWardrobeManager;
 
 internal sealed class ModConfig
 {

@@ -4,31 +4,25 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 
-namespace FashionSenseOutfitPreview;
+namespace FashionSenseWardrobeManager;
 
 internal sealed class ScheduleManager
 {
-    private const string ModDataKey = "FashionSenseOutfitPreview.Schedules";
+    private const string ModDataKey = "FashionSenseWardrobeManager.Schedules";
+    private const string LegacyModDataKey = "FashionSenseOutfitPreview.Schedules";
 
     public List<OutfitScheduleRule> LoadRules()
     {
-        if (!Game1.player.modData.TryGetValue(ModDataKey, out string? json)
-            || string.IsNullOrWhiteSpace(json))
-        {
-            return new();
-        }
+        if (TryLoad(ModDataKey, out List<OutfitScheduleRule> rules))
+            return rules;
 
-        try
+        if (TryLoad(LegacyModDataKey, out rules))
         {
-            List<OutfitScheduleRule> rules = JsonSerializer.Deserialize<List<OutfitScheduleRule>>(json) ?? new();
-            foreach (OutfitScheduleRule rule in rules)
-                Normalize(rule);
+            SaveRules(rules);
             return rules;
         }
-        catch
-        {
-            return new();
-        }
+
+        return new();
     }
 
     public void SaveRules(List<OutfitScheduleRule> rules)
@@ -176,6 +170,28 @@ internal sealed class ScheduleManager
             .Select(id => id.Trim())
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
+
+    private static bool TryLoad(string key, out List<OutfitScheduleRule> rules)
+    {
+        rules = new();
+        if (!Game1.player.modData.TryGetValue(key, out string? json)
+            || string.IsNullOrWhiteSpace(json))
+        {
+            return false;
+        }
+
+        try
+        {
+            rules = JsonSerializer.Deserialize<List<OutfitScheduleRule>>(json) ?? new();
+            foreach (OutfitScheduleRule rule in rules)
+                Normalize(rule);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
 
     private static bool IsValidTime(int time)
     {

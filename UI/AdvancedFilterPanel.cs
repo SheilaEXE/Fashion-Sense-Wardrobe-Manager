@@ -5,7 +5,7 @@ using StardewValley.Menus;
 using System.Collections.Generic;
 using System.Linq;
 
-namespace FashionSenseOutfitPreview;
+namespace FashionSenseWardrobeManager;
 
 /// <summary>
 /// Manages the advanced filter strip shown above the outfit grid.
