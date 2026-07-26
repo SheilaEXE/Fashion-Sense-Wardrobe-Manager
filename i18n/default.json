@@ -159,5 +159,8 @@
   "ui.schedule.name_optional": "Name (optional)",
   "ui.schedule.name_title": "Schedule name",
   "ui.schedule.active_now": "Active now",
-  "ui.schedule.waiting": "Waiting"
+  "ui.schedule.waiting": "Waiting",
+  "ui.schedule.change_frequency": "Outfit change frequency",
+  "ui.schedule.fixed_for_day": "Fixed for the day",
+  "ui.schedule.random_during_day": "Random during the day"
 }

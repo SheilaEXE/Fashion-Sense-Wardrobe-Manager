@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace FashionSenseOutfitPreview;
+namespace FashionSenseWardrobeManager;
 
 internal enum ScheduleSection
 {
@@ -46,6 +46,12 @@ internal enum ScheduleLocation
     Outdoors
 }
 
+internal enum ScheduleChangeFrequency
+{
+    OncePerDay,
+    EveryActivation
+}
+
 internal sealed class OutfitScheduleRule
 {
     public string Id { get; set; } = Guid.NewGuid().ToString("N");
@@ -66,5 +72,8 @@ internal sealed class OutfitScheduleRule
     public List<string> FestivalIds { get; set; } = new();
     public List<string> OutfitNames { get; set; } = new();
     public List<string> TagIds { get; set; } = new();
+    public ScheduleChangeFrequency ChangeFrequency { get; set; } = ScheduleChangeFrequency.OncePerDay;
     public string LastOutfitName { get; set; } = string.Empty;
+    public string LockedOutfitName { get; set; } = string.Empty;
+    public string LockedDayKey { get; set; } = string.Empty;
 }

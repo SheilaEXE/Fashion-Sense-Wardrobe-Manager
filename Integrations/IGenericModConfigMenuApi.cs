@@ -1,7 +1,7 @@
 using StardewModdingAPI;
 using System;
 
-namespace FashionSenseOutfitPreview;
+namespace FashionSenseWardrobeManager;
 
 public interface IGenericModConfigMenuApi
 {

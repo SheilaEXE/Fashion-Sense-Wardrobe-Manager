@@ -4,7 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 
-namespace FashionSenseOutfitPreview;
+namespace FashionSenseWardrobeManager;
 
 internal enum TagKind { General, Color }
 
@@ -20,20 +20,25 @@ internal sealed class OutfitTag
 
 /// <summary>
 /// Manages outfit tags, persisting them in the player's modData.
-/// Key: "FashionSenseOutfitPreview.Tags"
+/// Current key: "FashionSenseWardrobeManager.Tags". The previous key is retained for migration.
 /// </summary>
 internal sealed class TagManager
 {
-    private const string ModDataKey = "FashionSenseOutfitPreview.Tags";
+    private const string ModDataKey = "FashionSenseWardrobeManager.Tags";
+    private const string LegacyModDataKey = "FashionSenseOutfitPreview.Tags";
 
     public List<OutfitTag> LoadTags()
     {
-        if (!Game1.player.modData.TryGetValue(ModDataKey, out string? json)
-            || string.IsNullOrWhiteSpace(json))
-            return new();
+        if (TryLoad(ModDataKey, out List<OutfitTag> tags))
+            return tags;
 
-        try   { return JsonSerializer.Deserialize<List<OutfitTag>>(json) ?? new(); }
-        catch { return new(); }
+        if (TryLoad(LegacyModDataKey, out tags))
+        {
+            SaveTags(tags);
+            return tags;
+        }
+
+        return new();
     }
 
     public void SaveTags(List<OutfitTag> tags)
@@ -91,4 +96,24 @@ internal sealed class TagManager
     /// <summary>Return all tags (of any kind) assigned to the given outfit.</summary>
     public IEnumerable<OutfitTag> GetTagsForOutfit(List<OutfitTag> tags, string outfitName)
         => tags.Where(t => t.OutfitNames.Contains(outfitName));
+
+    private static bool TryLoad(string key, out List<OutfitTag> tags)
+    {
+        tags = new();
+        if (!Game1.player.modData.TryGetValue(key, out string? json)
+            || string.IsNullOrWhiteSpace(json))
+        {
+            return false;
+        }
+
+        try
+        {
+            tags = JsonSerializer.Deserialize<List<OutfitTag>>(json) ?? new();
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
 }

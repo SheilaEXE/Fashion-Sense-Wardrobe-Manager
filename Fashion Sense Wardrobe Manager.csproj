@@ -2,10 +2,12 @@
 
   <PropertyGroup>
     <TargetFramework>net6.0</TargetFramework>
-    <RootNamespace>FashionSenseOutfitPreview</RootNamespace>
-	  <AssemblyName>FashionSenseOutfitPreview</AssemblyName>
+    <RootNamespace>FashionSenseWardrobeManager</RootNamespace>
+    <AssemblyName>FashionSenseWardrobeManager</AssemblyName>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <!-- Exclude the pre-rebrand assembly if it remains in a local build directory. -->
+    <IgnoreModFilePaths>FashionSenseOutfitPreview.dll</IgnoreModFilePaths>
   </PropertyGroup>
 
   <ItemGroup>

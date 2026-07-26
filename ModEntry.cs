@@ -12,7 +12,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 
-namespace FashionSenseOutfitPreview;
+namespace FashionSenseWardrobeManager;
 
 /// <summary>
 /// Entry point.
@@ -71,7 +71,7 @@ internal sealed class ModEntry : Mod
     public override void Entry(IModHelper helper)
     {
         _config   = helper.ReadConfig<ModConfig>();
-        _organizationManager = new GlobalOrganizationManager(helper.Data);
+        _organizationManager = new GlobalOrganizationManager(helper.Data, Monitor);
         _scheduleConditionCatalog = new ScheduleConditionCatalog(helper.ModRegistry);
         _renderer = new OutfitPreviewRenderer(Monitor);
         _scheduleEvaluator = new ScheduleEvaluator(_scheduleManager, _tagManager, _renderer, Monitor);

@@ -4,31 +4,25 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 
-namespace FashionSenseOutfitPreview;
+namespace FashionSenseWardrobeManager;
 
 internal sealed class ScheduleManager
 {
-    private const string ModDataKey = "FashionSenseOutfitPreview.Schedules";
+    private const string ModDataKey = "FashionSenseWardrobeManager.Schedules";
+    private const string LegacyModDataKey = "FashionSenseOutfitPreview.Schedules";
 
     public List<OutfitScheduleRule> LoadRules()
     {
-        if (!Game1.player.modData.TryGetValue(ModDataKey, out string? json)
-            || string.IsNullOrWhiteSpace(json))
-        {
-            return new();
-        }
+        if (TryLoad(ModDataKey, out List<OutfitScheduleRule> rules))
+            return rules;
 
-        try
+        if (TryLoad(LegacyModDataKey, out rules))
         {
-            List<OutfitScheduleRule> rules = JsonSerializer.Deserialize<List<OutfitScheduleRule>>(json) ?? new();
-            foreach (OutfitScheduleRule rule in rules)
-                Normalize(rule);
+            SaveRules(rules);
             return rules;
         }
-        catch
-        {
-            return new();
-        }
+
+        return new();
     }
 
     public void SaveRules(List<OutfitScheduleRule> rules)
@@ -60,6 +54,12 @@ internal sealed class ScheduleManager
                 rule.LastOutfitName = newName;
                 changed = true;
             }
+
+            if (rule.LockedOutfitName.Equals(oldName, StringComparison.OrdinalIgnoreCase))
+            {
+                rule.LockedOutfitName = newName;
+                changed = true;
+            }
         }
 
         if (changed)
@@ -80,6 +80,12 @@ internal sealed class ScheduleManager
                 rule.LastOutfitName = string.Empty;
                 changed = true;
             }
+            if (removed.Contains(rule.LockedOutfitName))
+            {
+                rule.LockedOutfitName = string.Empty;
+                rule.LockedDayKey = string.Empty;
+                changed = true;
+            }
         }
 
         if (changed)
@@ -93,6 +99,18 @@ internal sealed class ScheduleManager
         if (rule.Name.Length > 32)
             rule.Name = rule.Name[..32];
         rule.LastOutfitName = (rule.LastOutfitName ?? string.Empty).Trim();
+        rule.LockedOutfitName = (rule.LockedOutfitName ?? string.Empty).Trim();
+        rule.LockedDayKey = (rule.LockedDayKey ?? string.Empty).Trim();
+        if (rule.ChangeFrequency is not ScheduleChangeFrequency.OncePerDay
+            and not ScheduleChangeFrequency.EveryActivation)
+        {
+            rule.ChangeFrequency = ScheduleChangeFrequency.OncePerDay;
+        }
+        if (rule.ChangeFrequency == ScheduleChangeFrequency.EveryActivation)
+        {
+            rule.LockedOutfitName = string.Empty;
+            rule.LockedDayKey = string.Empty;
+        }
         rule.SingleDay = Math.Clamp(rule.SingleDay, 1, 28);
         rule.Days = rule.Days
             .Where(day => day is >= 1 and <= 28)
@@ -152,6 +170,28 @@ internal sealed class ScheduleManager
             .Select(id => id.Trim())
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
+
+    private static bool TryLoad(string key, out List<OutfitScheduleRule> rules)
+    {
+        rules = new();
+        if (!Game1.player.modData.TryGetValue(key, out string? json)
+            || string.IsNullOrWhiteSpace(json))
+        {
+            return false;
+        }
+
+        try
+        {
+            rules = JsonSerializer.Deserialize<List<OutfitScheduleRule>>(json) ?? new();
+            foreach (OutfitScheduleRule rule in rules)
+                Normalize(rule);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
 
     private static bool IsValidTime(int time)
     {
