@@ -271,7 +271,7 @@ internal sealed class ScheduleEvaluator
         return locationIds.Any(id => id switch
         {
             ScheduleConditionIds.FarmHouse => current is FarmHouse,
-            ScheduleConditionIds.Indoors => !current.IsOutdoors,
+            ScheduleConditionIds.Indoors => !current.IsOutdoors && current is not FarmHouse,
             ScheduleConditionIds.Outdoors => current.IsOutdoors,
             ScheduleConditionIds.GingerIsland => current.InIslandContext(),
             ScheduleConditionIds.Mines => current is MineShaft
