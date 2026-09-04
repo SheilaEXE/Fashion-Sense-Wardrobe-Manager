@@ -38,6 +38,7 @@ internal static class I18n
     public static string ButtonYes            => Get("ui.button.yes");
     public static string ButtonNo             => Get("ui.button.no");
     public static string ButtonRename         => Get("ui.button.rename");
+    public static string ButtonUpdateOutfit   => Get("ui.button.update_outfit");
     public static string ButtonEdit           => Get("ui.button.edit");
     public static string ButtonDeleteTag      => Get("ui.button.delete_tag");
     public static string ButtonDeleteColor    => Get("ui.button.delete_color");
@@ -65,6 +66,9 @@ internal static class I18n
     public static string ConfirmDeleteTagMsg        => Get("ui.confirm.delete_tag.msg");
     public static string ConfirmDeleteColorTitle    => Get("ui.confirm.delete_color.title");
     public static string ConfirmDeleteColorMsg      => Get("ui.confirm.delete_color.msg");
+    public static string ConfirmUpdateOutfitTitle   => Get("ui.confirm.update_outfit.title");
+    public static string ConfirmUpdateOutfitMsg(string outfitName)
+        => Get("ui.confirm.update_outfit.msg", new { outfitName });
 
     // Empty states
     public static string EmptyCategory        => Get("ui.empty.category");
@@ -100,6 +104,8 @@ internal static class I18n
     public static string ErrorTagNameTaken    => Get("ui.error.tag_name_taken");
     public static string ErrorSaveOutfitFailed => Get("ui.error.save_outfit_failed");
     public static string ErrorRenameOutfitFailed => Get("ui.error.rename_outfit_failed");
+    public static string ErrorUpdateOutfitFailed => Get("ui.error.update_outfit_failed");
+    public static string MessageOutfitUpdated => Get("ui.message.outfit_updated");
     public static string ErrorOrganizationImportMissing => Get("ui.error.organization_import_missing");
     public static string MessageOrganizationExported => Get("ui.message.organization_exported");
     public static string MessageOrganizationImported => Get("ui.message.organization_imported");

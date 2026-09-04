@@ -216,6 +216,41 @@ internal sealed class OutfitPreviewRenderer
         }
     }
 
+    /// <summary>Replace a saved Fashion Sense outfit with the farmer's current appearance.</summary>
+    public bool OverrideOutfitWithCurrentAppearance(string outfitName)
+    {
+        string name = outfitName.Trim();
+
+        if (string.IsNullOrWhiteSpace(name))
+            return false;
+
+        try
+        {
+            object? outfitManager = GetOutfitManager();
+            if (outfitManager is null || !DoesOutfitExist(outfitManager, name))
+                return false;
+
+            if (!TryInvokeExactCompatibleMethod(
+                    outfitManager,
+                    "OverrideOutfit",
+                    out _,
+                    Game1.player,
+                    name))
+            {
+                _monitor.Log("The installed Fashion Sense version does not expose OverrideOutfit.", LogLevel.Warn);
+                return false;
+            }
+
+            MarkSpriteDirty();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _monitor.Log($"Error updating Fashion Sense outfit '{name}': {ex}", LogLevel.Warn);
+            return false;
+        }
+    }
+
     /// <summary>Delete a saved Fashion Sense outfit.</summary>
     public bool DeleteOutfit(string outfitName)
     {
@@ -652,7 +687,15 @@ internal sealed class OutfitPreviewRenderer
                ?.GetValue(null);
 
     private static object? InvokeExactCompatibleMethod(object target, string name, params object?[] args)
+        => TryInvokeExactCompatibleMethod(target, name, out object? result, args) ? result : null;
+
+    private static bool TryInvokeExactCompatibleMethod(
+        object target,
+        string name,
+        out object? result,
+        params object?[] args)
     {
+        result = null;
         BindingFlags flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
 
         foreach (MethodInfo method in target.GetType().GetMethods(flags))
@@ -693,10 +736,11 @@ internal sealed class OutfitPreviewRenderer
             if (!compatible)
                 continue;
 
-            return method.Invoke(target, args);
+            result = method.Invoke(target, args);
+            return true;
         }
 
-        return null;
+        return false;
     }
 
     private static object? InvokeMethod(object target, string name, params object?[] args)
