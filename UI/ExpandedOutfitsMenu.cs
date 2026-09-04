@@ -114,6 +114,7 @@ internal sealed class ExpandedOutfitsMenu : IClickableMenu
     private bool      _renameContextMenuOpen = false;
     private string?   _contextOutfitName = null;
     private Rectangle _renameContextMenuRect;
+    private Rectangle _updateOutfitContextMenuRect;
 
     // "Assign mode" for categories
     private bool          _assignMode         = false;
@@ -181,7 +182,9 @@ internal sealed class ExpandedOutfitsMenu : IClickableMenu
     private bool    _confirmDeleteSavedOutfits  = false;
     private bool    _confirmDeleteCategory      = false;
     private bool    _confirmDeleteTag           = false;
+    private bool    _confirmUpdateOutfit        = false;
     private string? _pendingDeleteTagId         = null;
+    private string? _pendingUpdateOutfitName    = null;
 
     // Advanced filter panel
     private readonly AdvancedFilterPanel _advancedPanel = new();
@@ -383,7 +386,7 @@ internal sealed class ExpandedOutfitsMenu : IClickableMenu
         {
             DrawCreationModal(b);
         }
-        else if (_confirmDeleteOutfits || _confirmDeleteSavedOutfits || _confirmDeleteCategory || _confirmDeleteTag)
+        else if (_confirmDeleteOutfits || _confirmDeleteSavedOutfits || _confirmDeleteCategory || _confirmDeleteTag || _confirmUpdateOutfit)
         {
             DrawConfirmModal(b);
         }
@@ -453,7 +456,7 @@ internal sealed class ExpandedOutfitsMenu : IClickableMenu
             return;
         }
 
-        if (_confirmDeleteOutfits || _confirmDeleteSavedOutfits || _confirmDeleteCategory || _confirmDeleteTag)
+        if (_confirmDeleteOutfits || _confirmDeleteSavedOutfits || _confirmDeleteCategory || _confirmDeleteTag || _confirmUpdateOutfit)
         {
             HandleConfirmModalClick(x, y);
             return;
@@ -467,9 +470,19 @@ internal sealed class ExpandedOutfitsMenu : IClickableMenu
 
         if (_renameContextMenuOpen)
         {
-            if (_renameContextMenuRect.Contains(x, y) && _contextOutfitName is not null)
+            if (_contextOutfitName is not null && _renameContextMenuRect.Contains(x, y))
             {
                 StartRenamingOutfit(_contextOutfitName);
+                return;
+            }
+
+            if (_contextOutfitName is not null && _updateOutfitContextMenuRect.Contains(x, y))
+            {
+                _pendingUpdateOutfitName = _contextOutfitName;
+                _confirmUpdateOutfit = true;
+                _renameContextMenuOpen = false;
+                _contextOutfitName = null;
+                Game1.playSound("smallSelect");
                 return;
             }
 
@@ -1105,7 +1118,7 @@ internal sealed class ExpandedOutfitsMenu : IClickableMenu
     public override void receiveRightClick(int x, int y, bool playSound = true)
     {
         if (IsNamingModalOpen
-            || _confirmDeleteOutfits || _confirmDeleteSavedOutfits || _confirmDeleteCategory || _confirmDeleteTag
+            || _confirmDeleteOutfits || _confirmDeleteSavedOutfits || _confirmDeleteCategory || _confirmDeleteTag || _confirmUpdateOutfit
             || _assignMode || _assignTagMode || _advancedPanel.IsOpen)
             return;
 
@@ -1120,11 +1133,14 @@ internal sealed class ExpandedOutfitsMenu : IClickableMenu
         _contextOutfitName = _visibleOutfits[clickedRow];
         _renameContextMenuOpen = true;
 
-        int menuW = 170;
-        int menuH = CategoryBarH;
+        int menuW = Math.Max(230, (int)Math.Ceiling(Math.Max(
+            Game1.smallFont.MeasureString(I18n.ButtonRename).X,
+            Game1.smallFont.MeasureString(I18n.ButtonUpdateOutfit).X)) + 32);
+        int menuH = CategoryBarH * 2 + 4;
         int menuX = Math.Clamp(x, xPositionOnScreen + 12, xPositionOnScreen + width - menuW - 12);
         int menuY = Math.Clamp(y, yPositionOnScreen + 12, yPositionOnScreen + height - menuH - 12);
-        _renameContextMenuRect = new Rectangle(menuX, menuY, menuW, menuH);
+        _renameContextMenuRect = new Rectangle(menuX, menuY, menuW, CategoryBarH);
+        _updateOutfitContextMenuRect = new Rectangle(menuX, menuY + CategoryBarH + 4, menuW, CategoryBarH);
 
         Game1.playSound("smallSelect");
     }
@@ -1495,6 +1511,18 @@ internal sealed class ExpandedOutfitsMenu : IClickableMenu
         Utility.drawTextWithShadow(b, I18n.ButtonRename, Game1.smallFont,
             new Vector2(_renameContextMenuRect.Center.X - size.X / 2f,
                 _renameContextMenuRect.Center.Y - size.Y / 2f),
+            Game1.textColor);
+
+        bool updateHovered = _updateOutfitContextMenuRect.Contains(Game1.getMouseX(), Game1.getMouseY());
+        drawTextureBox(b, Game1.mouseCursors, new Rectangle(432, 439, 9, 9),
+            _updateOutfitContextMenuRect.X, _updateOutfitContextMenuRect.Y,
+            _updateOutfitContextMenuRect.Width, _updateOutfitContextMenuRect.Height,
+            updateHovered ? Color.Wheat : Color.White, 4f, drawShadow: true);
+
+        Vector2 updateSize = Game1.smallFont.MeasureString(I18n.ButtonUpdateOutfit);
+        Utility.drawTextWithShadow(b, I18n.ButtonUpdateOutfit, Game1.smallFont,
+            new Vector2(_updateOutfitContextMenuRect.Center.X - updateSize.X / 2f,
+                _updateOutfitContextMenuRect.Center.Y - updateSize.Y / 2f),
             Game1.textColor);
     }
 
@@ -2348,11 +2376,17 @@ internal sealed class ExpandedOutfitsMenu : IClickableMenu
                 RebuildVisibleOutfits();
                 Game1.playSound("trashcan");
             }
+            else if (_confirmUpdateOutfit && _pendingUpdateOutfitName is not null)
+            {
+                UpdateSavedOutfit(_pendingUpdateOutfitName);
+            }
 
             _confirmDeleteCategory     = false;
             _confirmDeleteOutfits      = false;
             _confirmDeleteSavedOutfits = false;
             _confirmDeleteTag          = false;
+            _confirmUpdateOutfit       = false;
+            _pendingUpdateOutfitName   = null;
             return;
         }
 
@@ -2362,7 +2396,9 @@ internal sealed class ExpandedOutfitsMenu : IClickableMenu
             _confirmDeleteOutfits      = false;
             _confirmDeleteSavedOutfits = false;
             _confirmDeleteTag          = false;
+            _confirmUpdateOutfit       = false;
             _pendingDeleteTagId    = null;
+            _pendingUpdateOutfitName = null;
             Game1.playSound("smallSelect");
         }
     }
@@ -2517,6 +2553,26 @@ internal sealed class ExpandedOutfitsMenu : IClickableMenu
         _namingFocused = true;
         _newItemName = outfitName;
         Game1.playSound("smallSelect");
+    }
+
+    private void UpdateSavedOutfit(string outfitName)
+    {
+        // A grid preview temporarily changes the farmer's appearance. Restore the
+        // real current style first so the preview itself is never saved by mistake.
+        if (_renderer.IsPreviewActive)
+            _renderer.RestoreOriginal();
+
+        if (!_renderer.OverrideOutfitWithCurrentAppearance(outfitName))
+        {
+            Game1.addHUDMessage(new HUDMessage(I18n.ErrorUpdateOutfitFailed, HUDMessage.error_type));
+            return;
+        }
+
+        _selectedOutfit = outfitName;
+        RefreshParentMenu();
+        RebuildVisibleOutfits();
+        Game1.addHUDMessage(new HUDMessage(I18n.MessageOutfitUpdated));
+        Game1.playSound("newArtifact");
     }
 
     private void StartRenamingSchedule(OutfitScheduleRule rule)
@@ -3205,7 +3261,12 @@ internal sealed class ExpandedOutfitsMenu : IClickableMenu
         string title;
         string msg;
 
-        if (_confirmDeleteCategory)
+        if (_confirmUpdateOutfit && _pendingUpdateOutfitName is not null)
+        {
+            title = I18n.ConfirmUpdateOutfitTitle;
+            msg   = I18n.ConfirmUpdateOutfitMsg(_pendingUpdateOutfitName);
+        }
+        else if (_confirmDeleteCategory)
         {
             title = I18n.ConfirmDeleteCategoryTitle;
             msg   = I18n.ConfirmDeleteCategoryMsg;
