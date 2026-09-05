@@ -41,6 +41,7 @@ internal sealed class ModEntry : Mod
     private ScheduleManager       _scheduleManager = new();
     private ScheduleConditionCatalog _scheduleConditionCatalog = null!;
     private ScheduleEvaluator     _scheduleEvaluator = null!;
+    private CosmeticShoeManager   _cosmeticShoeManager = null!;
     private OutfitPreviewRenderer _renderer        = null!;
     private bool _scheduleEvaluationQueued;
     private int _scheduleEvaluationTicks;
@@ -73,7 +74,8 @@ internal sealed class ModEntry : Mod
         _config   = helper.ReadConfig<ModConfig>();
         _organizationManager = new GlobalOrganizationManager(helper.Data, Monitor);
         _scheduleConditionCatalog = new ScheduleConditionCatalog(helper.ModRegistry);
-        _renderer = new OutfitPreviewRenderer(Monitor);
+        _cosmeticShoeManager = new CosmeticShoeManager(Monitor);
+        _renderer = new OutfitPreviewRenderer(Monitor, _cosmeticShoeManager);
         _scheduleEvaluator = new ScheduleEvaluator(_scheduleManager, _tagManager, _renderer, Monitor);
         I18n.Init(helper.Translation);
 
@@ -84,6 +86,7 @@ internal sealed class ModEntry : Mod
         helper.Events.GameLoop.DayStarted      += OnDayStarted;
         helper.Events.GameLoop.SaveLoaded      += OnSaveLoaded;
         helper.Events.GameLoop.TimeChanged     += OnTimeChanged;
+        helper.Events.GameLoop.OneSecondUpdateTicked += OnOneSecondUpdateTicked;
         helper.Events.Player.Warped            += OnWarped;
     }
 
@@ -305,7 +308,8 @@ internal sealed class ModEntry : Mod
         List<string> outfitNames = GetAllOutfitNames(fashionSenseMenu);
 
         var expanded = new ExpandedOutfitsMenu(_categoryManager, _tagManager, _organizationManager,
-            _scheduleManager, _scheduleEvaluator, _scheduleConditionCatalog, _renderer, outfitNames, fashionSenseMenu);
+            _scheduleManager, _scheduleEvaluator, _scheduleConditionCatalog, _cosmeticShoeManager,
+            _renderer, outfitNames, fashionSenseMenu);
         Game1.activeClickableMenu = expanded;
 
         Game1.playSound("bigSelect");
@@ -327,6 +331,18 @@ internal sealed class ModEntry : Mod
 
     private void OnTimeChanged(object? sender, TimeChangedEventArgs e)
         => _scheduleEvaluator.Evaluate(exactTimeTrigger: true);
+
+    private void OnOneSecondUpdateTicked(object? sender, OneSecondUpdateTickedEventArgs e)
+    {
+        if (!Context.IsWorldReady || Game1.activeClickableMenu is ExpandedOutfitsMenu)
+            return;
+
+        if (Game1.player.modData.TryGetValue("FashionSense.CurrentOutfit", out string? outfitName)
+            && !string.IsNullOrWhiteSpace(outfitName))
+        {
+            _cosmeticShoeManager.ApplyForOutfit(outfitName);
+        }
+    }
 
     private void QueueScheduleEvaluation()
     {
