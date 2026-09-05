@@ -4,6 +4,7 @@ using Microsoft.Xna.Framework.Input;
 using StardewValley;
 using StardewValley.BellsAndWhistles;
 using StardewValley.Menus;
+using StardewValley.Objects;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -64,6 +65,7 @@ internal sealed class ExpandedOutfitsMenu : IClickableMenu
     private readonly TagManager            _tagManager;
     private readonly GlobalOrganizationManager _organizationManager;
     private readonly SchedulePanel         _schedulePanel;
+    private readonly CosmeticShoeManager   _cosmeticShoeManager;
     private readonly OutfitPreviewRenderer _renderer;
     private readonly IClickableMenu?       _returnMenu;
     private readonly List<string>          _allOutfitNames;
@@ -203,6 +205,7 @@ internal sealed class ExpandedOutfitsMenu : IClickableMenu
     private Rectangle _leftArrow;
     private Rectangle _rightArrow;
     private Rectangle _equipButton;
+    private Rectangle _cosmeticShoeButton;
     private Rectangle _createCategoryButton;   // kept as alias → _createButton
 
     // Extra buttons (only visible when a custom category is active)
@@ -234,6 +237,11 @@ internal sealed class ExpandedOutfitsMenu : IClickableMenu
     private Rectangle _modalTextBox;
     private Rectangle _assignDoneButton;
 
+    // Cosmetic shoe picker
+    private bool _shoePickerOpen;
+    private int _shoePickerScroll;
+    private List<Boots> _shoeOptions = new();
+
     // Constructor
 
     public ExpandedOutfitsMenu(
@@ -243,6 +251,7 @@ internal sealed class ExpandedOutfitsMenu : IClickableMenu
         ScheduleManager       scheduleManager,
         ScheduleEvaluator     scheduleEvaluator,
         ScheduleConditionCatalog scheduleConditionCatalog,
+        CosmeticShoeManager cosmeticShoeManager,
         OutfitPreviewRenderer renderer,
         IReadOnlyList<string> allOutfitNames,
         IClickableMenu?       parentMenu = null)
@@ -256,6 +265,7 @@ internal sealed class ExpandedOutfitsMenu : IClickableMenu
         _categoryManager = categoryManager;
         _tagManager      = tagManager;
         _organizationManager = organizationManager;
+        _cosmeticShoeManager = cosmeticShoeManager;
         _renderer        = renderer;
         _returnMenu      = parentMenu;
         _allOutfitNames  = allOutfitNames.Distinct().ToList();
@@ -425,11 +435,20 @@ internal sealed class ExpandedOutfitsMenu : IClickableMenu
             _schedulePanel.DrawSideTabs(b);
         }
 
+        if (_shoePickerOpen)
+            DrawShoePicker(b);
+
         drawMouse(b);
     }
 
     public override void receiveLeftClick(int x, int y, bool playSound = true)
     {
+        if (_shoePickerOpen)
+        {
+            HandleShoePickerClick(x, y);
+            return;
+        }
+
         // Close Create submenu if clicking anywhere outside it
         if (_createSubmenuOpen
             && !_createButton.Contains(x, y)
@@ -880,6 +899,15 @@ internal sealed class ExpandedOutfitsMenu : IClickableMenu
             return;
         }
 
+        if (_selectedOutfit is not null
+            && !_deleteOutfitMode
+            && !_scheduleOutfitSelectionMode
+            && _cosmeticShoeButton.Contains(x, y))
+        {
+            OpenShoePicker();
+            return;
+        }
+
         // Equip / Confirm button
         if (_equipButton.Contains(x, y))
         {
@@ -1163,7 +1191,12 @@ internal sealed class ExpandedOutfitsMenu : IClickableMenu
 
         if (key == Keys.Escape)
         {
-            if (_scheduleOutfitSelectionMode)
+            if (_shoePickerOpen)
+            {
+                _shoePickerOpen = false;
+                Game1.playSound("smallSelect");
+            }
+            else if (_scheduleOutfitSelectionMode)
             {
                 CancelScheduleOutfitSelection();
                 Game1.playSound("smallSelect");
@@ -1257,6 +1290,13 @@ internal sealed class ExpandedOutfitsMenu : IClickableMenu
     public override void receiveScrollWheelAction(int direction)
     {
         int mx = Game1.getMouseX(), my = Game1.getMouseY();
+
+        if (_shoePickerOpen)
+        {
+            int maxScroll = GetShoePickerMaxScroll();
+            _shoePickerScroll = Math.Clamp(_shoePickerScroll + (direction > 0 ? -1 : 1), 0, maxScroll);
+            return;
+        }
 
         if (_schedulePanel.IsOpen && !_scheduleOutfitSelectionMode
             && _schedulePanel.HandleScroll(direction, mx, my))
@@ -2095,13 +2135,37 @@ internal sealed class ExpandedOutfitsMenu : IClickableMenu
         if (!showEquipButton)
             return;
 
+        if (_selectedOutfit is not null && !_deleteOutfitMode && !_scheduleOutfitSelectionMode)
+        {
+            bool shoeHovered = _cosmeticShoeButton.Contains(Game1.getMouseX(), Game1.getMouseY());
+            drawTextureBox(b, Game1.mouseCursors,
+                new Rectangle(432, 439, 9, 9),
+                _cosmeticShoeButton.X, _cosmeticShoeButton.Y,
+                _cosmeticShoeButton.Width, _cosmeticShoeButton.Height,
+                shoeHovered ? Color.Wheat : Color.White, 4f, drawShadow: false);
+
+            string? shoeId = _cosmeticShoeManager.GetShoeId(_selectedOutfit);
+            string shoeName = I18n.CosmeticShoesAutomatic;
+            if (shoeId is not null && ItemRegistry.Create(shoeId, allowNull: true) is Boots selectedBoots)
+                shoeName = selectedBoots.DisplayName;
+
+            string shoeLabel = $"{I18n.ButtonCosmeticShoes}: {shoeName}";
+            shoeLabel = TruncateString(shoeLabel, Game1.smallFont, _cosmeticShoeButton.Width - 16);
+            Vector2 shoeSize = Game1.smallFont.MeasureString(shoeLabel);
+            Utility.drawTextWithShadow(b, shoeLabel, Game1.smallFont,
+                new Vector2(_cosmeticShoeButton.Center.X - shoeSize.X / 2f,
+                    _cosmeticShoeButton.Center.Y - shoeSize.Y / 2f),
+                Game1.textColor);
+        }
+
         // Equip / Confirm button
         bool equipHovered = _equipButton.Contains(Game1.getMouseX(), Game1.getMouseY());
         bool equipAvailable = _scheduleOutfitSelectionMode
             ? _scheduleSelectedOutfits.Count > 0 || _scheduleSelectedTagIds.Count > 0
             : _deleteOutfitMode
             ? _selectedForDeletion.Count > 0
-            : _selectedOutfit is not null && _selectedOutfit != GetCurrentOutfitName();
+            : _selectedOutfit is not null
+                && (_renderer.IsPreviewActive || _selectedOutfit != GetCurrentOutfitName());
 
         string buttonLabel = (_deleteOutfitMode || _scheduleOutfitSelectionMode) ? I18n.ButtonConfirm : I18n.ButtonEquip;
 
@@ -2119,6 +2183,195 @@ internal sealed class ExpandedOutfitsMenu : IClickableMenu
             new Vector2(_equipButton.Center.X - esz.X / 2f, _equipButton.Center.Y - esz.Y / 2f),
             equipAvailable ? Game1.textColor : Color.DarkGray);
     }
+
+    private void OpenShoePicker()
+    {
+        if (_selectedOutfit is null)
+            return;
+
+        _shoeOptions = _cosmeticShoeManager.GetAvailableShoes();
+        _shoePickerScroll = 0;
+
+        string? selectedId = _cosmeticShoeManager.GetShoeId(_selectedOutfit);
+        if (selectedId is not null)
+        {
+            int selectedIndex = _shoeOptions.FindIndex(boots =>
+                boots.QualifiedItemId.Equals(selectedId, StringComparison.OrdinalIgnoreCase)) + 1;
+            if (selectedIndex > 0)
+                _shoePickerScroll = Math.Clamp(selectedIndex / 2 - 2, 0, GetShoePickerMaxScroll());
+        }
+
+        _shoePickerOpen = true;
+        CloseTransientControls();
+        Game1.playSound("bigSelect");
+    }
+
+    private void DrawShoePicker(SpriteBatch b)
+    {
+        b.Draw(Game1.fadeToBlackRect, Game1.graphics.GraphicsDevice.Viewport.Bounds, Color.Black * 0.55f);
+
+        Rectangle modal = GetShoePickerBounds();
+        drawTextureBox(b, Game1.mouseCursors, new Rectangle(384, 373, 18, 18),
+            modal.X, modal.Y, modal.Width, modal.Height, Color.White, 4f, drawShadow: true);
+
+        SpriteText.drawStringWithScrollCenteredAt(b, I18n.CosmeticShoesTitle, modal.Center.X, modal.Y + 28);
+
+        const int columns = 2;
+        const int visibleRows = 5;
+        int firstIndex = _shoePickerScroll * columns;
+        int optionCount = _shoeOptions.Count + 1;
+        string? selectedId = _selectedOutfit is null ? null : _cosmeticShoeManager.GetShoeId(_selectedOutfit);
+
+        for (int slot = 0; slot < columns * visibleRows; slot++)
+        {
+            int optionIndex = firstIndex + slot;
+            if (optionIndex >= optionCount)
+                break;
+
+            Rectangle cell = GetShoePickerCellBounds(modal, slot);
+            bool automatic = optionIndex == 0;
+            Boots? boots = automatic ? null : _shoeOptions[optionIndex - 1];
+            bool selected = automatic
+                ? selectedId is null
+                : boots!.QualifiedItemId.Equals(selectedId, StringComparison.OrdinalIgnoreCase);
+            bool hovered = cell.Contains(Game1.getMouseX(), Game1.getMouseY());
+
+            drawTextureBox(b, Game1.mouseCursors, new Rectangle(432, 439, 9, 9),
+                cell.X, cell.Y, cell.Width, cell.Height,
+                selected ? Color.PaleGreen : hovered ? Color.Wheat : Color.White,
+                4f, drawShadow: false);
+
+            string label;
+            int textX;
+            if (automatic)
+            {
+                label = I18n.CosmeticShoesAutomatic;
+                textX = cell.X + 18;
+            }
+            else
+            {
+                boots!.drawInMenu(b, new Vector2(cell.X + 4, cell.Y + 4), 0.8f);
+                label = boots.DisplayName;
+                textX = cell.X + 72;
+            }
+
+            label = TruncateString(label, Game1.smallFont, cell.Right - textX - 12);
+            Vector2 size = Game1.smallFont.MeasureString(label);
+            Utility.drawTextWithShadow(b, label, Game1.smallFont,
+                new Vector2(textX, cell.Center.Y - size.Y / 2f), Game1.textColor);
+        }
+
+        Rectangle close = GetShoePickerCloseBounds(modal);
+        bool closeHovered = close.Contains(Game1.getMouseX(), Game1.getMouseY());
+        drawTextureBox(b, Game1.mouseCursors, new Rectangle(432, 439, 9, 9),
+            close.X, close.Y, close.Width, close.Height,
+            closeHovered ? Color.Salmon : Color.White, 4f, drawShadow: false);
+        Vector2 closeSize = Game1.smallFont.MeasureString(I18n.ButtonClose);
+        Utility.drawTextWithShadow(b, I18n.ButtonClose, Game1.smallFont,
+            new Vector2(close.Center.X - closeSize.X / 2f, close.Center.Y - closeSize.Y / 2f),
+            Game1.textColor);
+
+        if (GetShoePickerMaxScroll() > 0)
+        {
+            DrawArrowButton(b, GetShoePickerUpBounds(modal), LeftArrowSrc, rotated: true);
+            DrawArrowButton(b, GetShoePickerDownBounds(modal), RightArrowSrc, rotated: true);
+
+            string page = $"{_shoePickerScroll + 1}/{GetShoePickerMaxScroll() + 1}";
+            Vector2 pageSize = Game1.smallFont.MeasureString(page);
+            Utility.drawTextWithShadow(b, page, Game1.smallFont,
+                new Vector2(modal.Right - 86 - pageSize.X / 2f, close.Center.Y - pageSize.Y / 2f),
+                Game1.textColor);
+        }
+    }
+
+    private void HandleShoePickerClick(int x, int y)
+    {
+        Rectangle modal = GetShoePickerBounds();
+        if (GetShoePickerUpBounds(modal).Contains(x, y))
+        {
+            _shoePickerScroll = Math.Max(0, _shoePickerScroll - 1);
+            Game1.playSound("shwip");
+            return;
+        }
+
+        if (GetShoePickerDownBounds(modal).Contains(x, y))
+        {
+            _shoePickerScroll = Math.Min(GetShoePickerMaxScroll(), _shoePickerScroll + 1);
+            Game1.playSound("shwip");
+            return;
+        }
+
+        if (!modal.Contains(x, y) || GetShoePickerCloseBounds(modal).Contains(x, y))
+        {
+            _shoePickerOpen = false;
+            Game1.playSound("smallSelect");
+            return;
+        }
+
+        const int columns = 2;
+        const int visibleRows = 5;
+        int firstIndex = _shoePickerScroll * columns;
+        int optionCount = _shoeOptions.Count + 1;
+
+        for (int slot = 0; slot < columns * visibleRows; slot++)
+        {
+            int optionIndex = firstIndex + slot;
+            if (optionIndex >= optionCount || !GetShoePickerCellBounds(modal, slot).Contains(x, y))
+                continue;
+
+            if (_selectedOutfit is null)
+                return;
+
+            string outfitName = _selectedOutfit;
+            string? shoeId = optionIndex == 0 ? null : _shoeOptions[optionIndex - 1].QualifiedItemId;
+            _cosmeticShoeManager.SetShoe(outfitName, shoeId);
+            _shoePickerOpen = false;
+
+            if (_renderer.IsPreviewActive)
+                _renderer.RestoreOriginal();
+
+            _selectedOutfit = null;
+            SelectOutfit(outfitName);
+            Game1.playSound("coin");
+            return;
+        }
+    }
+
+    private int GetShoePickerMaxScroll()
+        => Math.Max(0, (int)Math.Ceiling((_shoeOptions.Count + 1) / 2d) - 5);
+
+    private static Rectangle GetShoePickerBounds()
+    {
+        const int modalWidth = 820;
+        const int modalHeight = 540;
+        return new Rectangle(
+            Game1.uiViewport.Width / 2 - modalWidth / 2,
+            Game1.uiViewport.Height / 2 - modalHeight / 2,
+            modalWidth,
+            modalHeight);
+    }
+
+    private static Rectangle GetShoePickerCellBounds(Rectangle modal, int visibleSlot)
+    {
+        const int columns = 2;
+        const int cellHeight = 72;
+        const int gap = 8;
+        int contentX = modal.X + 28;
+        int contentY = modal.Y + 82;
+        int cellWidth = (modal.Width - 56 - gap) / columns;
+        int column = visibleSlot % columns;
+        int row = visibleSlot / columns;
+        return new Rectangle(contentX + column * (cellWidth + gap), contentY + row * (cellHeight + gap), cellWidth, cellHeight);
+    }
+
+    private static Rectangle GetShoePickerCloseBounds(Rectangle modal)
+        => new(modal.Center.X - 70, modal.Bottom - 58, 140, 44);
+
+    private static Rectangle GetShoePickerUpBounds(Rectangle modal)
+        => new(modal.Right - 160, modal.Bottom - 58, 40, 40);
+
+    private static Rectangle GetShoePickerDownBounds(Rectangle modal)
+        => new(modal.Right - 52, modal.Bottom - 58, 40, 40);
 
     private void DrawCreationModal(SpriteBatch b)
     {
@@ -2692,6 +2945,7 @@ internal sealed class ExpandedOutfitsMenu : IClickableMenu
         }
         _tagManager.SaveTags(_tags);
         _schedulePanel.RenameOutfit(oldName, newName);
+        _cosmeticShoeManager.RenameOutfit(oldName, newName);
 
         if (_selectedOutfit is not null && _selectedOutfit.Equals(oldName, StringComparison.OrdinalIgnoreCase))
             _selectedOutfit = newName;
@@ -2887,6 +3141,7 @@ internal sealed class ExpandedOutfitsMenu : IClickableMenu
         }
         _tagManager.SaveTags(_tags);
         _schedulePanel.RemoveOutfits(deletedNames);
+        _cosmeticShoeManager.RemoveOutfits(deletedNames);
 
         if (_selectedOutfit is not null && deletedNames.Contains(_selectedOutfit))
             _selectedOutfit = null;
@@ -2976,7 +3231,13 @@ internal sealed class ExpandedOutfitsMenu : IClickableMenu
             160, 52);
 
         // Direction arrows sit ABOVE the equip button (horizontally centred, below portrait name)
-        int arrowY = equipY - 48;
+        _cosmeticShoeButton = new Rectangle(
+            _previewPanel.X + 24,
+            equipY - 48,
+            _previewPanel.Width - 48,
+            40);
+
+        int arrowY = equipY - 96;
         _leftArrow  = new Rectangle(_previewPanel.Center.X - 88, arrowY, 40, 36);
         _rightArrow = new Rectangle(_previewPanel.Center.X + 48, arrowY, 40, 36);
 

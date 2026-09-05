@@ -74,6 +74,7 @@ internal sealed class OutfitScheduleRule
     public List<string> TagIds { get; set; } = new();
     public ScheduleChangeFrequency ChangeFrequency { get; set; } = ScheduleChangeFrequency.OncePerDay;
     public string LastOutfitName { get; set; } = string.Empty;
+    public List<string> UsedOutfitNames { get; set; } = new();
     public string LockedOutfitName { get; set; } = string.Empty;
     public string LockedDayKey { get; set; } = string.Empty;
 }

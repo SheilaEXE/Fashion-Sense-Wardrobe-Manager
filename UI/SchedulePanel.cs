@@ -601,6 +601,11 @@ internal sealed class SchedulePanel
 
             if (rule.LastOutfitName.Equals(oldName, StringComparison.OrdinalIgnoreCase))
                 rule.LastOutfitName = newName;
+            for (int i = 0; i < rule.UsedOutfitNames.Count; i++)
+            {
+                if (rule.UsedOutfitNames[i].Equals(oldName, StringComparison.OrdinalIgnoreCase))
+                    rule.UsedOutfitNames[i] = newName;
+            }
             if (rule.LockedOutfitName.Equals(oldName, StringComparison.OrdinalIgnoreCase))
                 rule.LockedOutfitName = newName;
         }
@@ -614,6 +619,7 @@ internal sealed class SchedulePanel
         foreach (OutfitScheduleRule rule in _rules)
         {
             rule.OutfitNames.RemoveAll(removed.Contains);
+            rule.UsedOutfitNames.RemoveAll(removed.Contains);
             if (removed.Contains(rule.LastOutfitName))
                 rule.LastOutfitName = string.Empty;
             if (removed.Contains(rule.LockedOutfitName))

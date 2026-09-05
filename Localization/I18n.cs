@@ -44,6 +44,10 @@ internal static class I18n
     public static string ButtonDeleteColor    => Get("ui.button.delete_color");
     public static string ButtonDeleteOutfits  => Get("ui.button.delete_outfits");
     public static string ButtonNone           => Get("ui.button.none");
+    public static string ButtonCosmeticShoes => Get("ui.button.cosmetic_shoes");
+    public static string CosmeticShoesTitle => Get("ui.cosmetic_shoes.title");
+    public static string CosmeticShoesAutomatic => Get("ui.cosmetic_shoes.automatic");
+    public static string CosmeticShoesAutomaticTooltip => Get("ui.cosmetic_shoes.automatic_tooltip");
 
     // Modal
     public static string ModalNewCategory     => Get("ui.modal.new_category");

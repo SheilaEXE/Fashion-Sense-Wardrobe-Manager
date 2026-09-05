@@ -19,8 +19,10 @@ internal sealed class OutfitPreviewRenderer
     // State
 
     private readonly IMonitor _monitor;
+    private readonly CosmeticShoeManager _cosmeticShoeManager;
 
     private Dictionary<string, string>? _snapshot;
+    private string? _snapshotShoeColor;
     private readonly Dictionary<string, string> _renamePreviewAliases = new(StringComparer.OrdinalIgnoreCase);
     private string? _activeOutfitName;
 
@@ -29,9 +31,10 @@ internal sealed class OutfitPreviewRenderer
 
     // Constructor
 
-    public OutfitPreviewRenderer(IMonitor monitor)
+    public OutfitPreviewRenderer(IMonitor monitor, CosmeticShoeManager cosmeticShoeManager)
     {
         _monitor = monitor;
+        _cosmeticShoeManager = cosmeticShoeManager;
     }
 
     // Outfit apply / restore
@@ -62,6 +65,7 @@ internal sealed class OutfitPreviewRenderer
         RestoreSnapshot();
         _activeOutfitName = null;
         _snapshot         = null;
+        _snapshotShoeColor = null;
     }
 
     /// <summary>
@@ -71,6 +75,7 @@ internal sealed class OutfitPreviewRenderer
     public void CommitPreview()
     {
         _snapshot         = null;
+        _snapshotShoeColor = null;
         _activeOutfitName = null;
     }
 
@@ -565,6 +570,7 @@ internal sealed class OutfitPreviewRenderer
             return false;
 
         InvokeExactCompatibleMethod(outfitManager, "SetOutfit", Game1.player, outfit);
+        _cosmeticShoeManager.ApplyForOutfit(outfitName);
         MarkSpriteDirty();
 
         return true;
@@ -573,6 +579,7 @@ internal sealed class OutfitPreviewRenderer
     private Dictionary<string, string> TakeSnapshot()
     {
         var snapshot = new Dictionary<string, string>();
+        _snapshotShoeColor = Game1.player.shoes.Value;
 
         foreach (string key in Game1.player.modData.Keys)
         {
@@ -608,6 +615,9 @@ internal sealed class OutfitPreviewRenderer
 
         foreach (var (key, value) in _snapshot)
             Game1.player.modData[key] = value;
+
+        if (_snapshotShoeColor is not null)
+            Game1.player.changeShoeColor(_snapshotShoeColor);
 
         MarkSpriteDirty();
     }

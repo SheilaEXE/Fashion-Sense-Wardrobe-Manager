@@ -57,24 +57,53 @@ internal sealed class ScheduleEvaluator
         string outfitName;
         bool newDailySelection = lockedOutfit is null
             && selectedRule.ChangeFrequency == ScheduleChangeFrequency.OncePerDay;
+        bool selectionStateChanged = false;
         if (lockedOutfit is not null)
         {
             outfitName = lockedOutfit;
         }
         else
         {
-            List<string> choices = available.Count > 1 && !string.IsNullOrWhiteSpace(selectedRule.LastOutfitName)
-                ? available.Where(name => !name.Equals(selectedRule.LastOutfitName, StringComparison.OrdinalIgnoreCase)).ToList()
-                : available;
+            HashSet<string> availableNames = new(available, StringComparer.OrdinalIgnoreCase);
+            int removed = selectedRule.UsedOutfitNames.RemoveAll(name => !availableNames.Contains(name));
+            selectionStateChanged |= removed > 0;
+
+            // Migrate existing schedules naturally: the previously selected outfit
+            // counts as used when the new rotation state is still empty.
+            if (selectedRule.UsedOutfitNames.Count == 0
+                && !string.IsNullOrWhiteSpace(selectedRule.LastOutfitName)
+                && availableNames.Contains(selectedRule.LastOutfitName))
+            {
+                selectedRule.UsedOutfitNames.Add(selectedRule.LastOutfitName);
+                selectionStateChanged = true;
+            }
+
+            HashSet<string> used = new(selectedRule.UsedOutfitNames, StringComparer.OrdinalIgnoreCase);
+            List<string> choices = available.Where(name => !used.Contains(name)).ToList();
+
             if (choices.Count == 0)
-                choices = available;
+            {
+                selectedRule.UsedOutfitNames.Clear();
+                selectionStateChanged = true;
+
+                // At the boundary between rotations, don't immediately repeat the
+                // outfit which finished the previous rotation.
+                choices = available.Count > 1 && !string.IsNullOrWhiteSpace(selectedRule.LastOutfitName)
+                    ? available.Where(name => !name.Equals(selectedRule.LastOutfitName, StringComparison.OrdinalIgnoreCase)).ToList()
+                    : available;
+            }
 
             outfitName = choices[_random.Next(choices.Count)];
         }
 
         if (_renderer.EquipOutfitImmediately(outfitName))
         {
-            bool selectionStateChanged = false;
+            if (!selectedRule.UsedOutfitNames.Contains(outfitName, StringComparer.OrdinalIgnoreCase))
+            {
+                selectedRule.UsedOutfitNames.Add(outfitName);
+                selectionStateChanged = true;
+            }
+
             if (!selectedRule.LastOutfitName.Equals(outfitName, StringComparison.OrdinalIgnoreCase))
             {
                 selectedRule.LastOutfitName = outfitName;
