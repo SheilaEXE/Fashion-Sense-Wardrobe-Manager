@@ -4,6 +4,7 @@ using StardewModdingAPI;
 using StardewValley;
 using System;
 using System.Collections.Generic;
+using System.Collections;
 using System.Linq;
 using System.Reflection;
 
@@ -16,6 +17,8 @@ namespace FashionSenseWardrobeManager;
 /// </summary>
 internal sealed class OutfitPreviewRenderer
 {
+    internal sealed record FashionSenseShoeOption(string Id, string DisplayName, string PackName);
+
     // State
 
     private readonly IMonitor _monitor;
@@ -256,6 +259,97 @@ internal sealed class OutfitPreviewRenderer
         }
     }
 
+    /// <summary>Get all Fashion Sense shoe appearances currently registered by content packs.</summary>
+    public List<FashionSenseShoeOption> GetAvailableFashionSenseShoes()
+    {
+        var result = new List<FashionSenseShoeOption>();
+
+        try
+        {
+            Type? fsType = FindType("FashionSense.FashionSense");
+            object? textureManager = fsType is null ? null : GetStaticField(fsType, "textureManager");
+            object? models = textureManager is null ? null : InvokeExactCompatibleMethod(textureManager, "GetIdToAppearanceModels");
+
+            if (models is not IDictionary dictionary)
+                return result;
+
+            foreach (DictionaryEntry entry in dictionary)
+            {
+                object? model = entry.Value;
+                if (model is null || !model.GetType().FullName!.EndsWith(".Shoes.ShoesContentPack", StringComparison.Ordinal))
+                    continue;
+
+                if (GetMemberBool(model, "IsLocked") == true)
+                    continue;
+
+                string id = entry.Key?.ToString() ?? string.Empty;
+                string name = GetMemberString(model, "Name") ?? id;
+                string packName = GetMemberString(model, "PackName") ?? string.Empty;
+                if (!string.IsNullOrWhiteSpace(id))
+                    result.Add(new FashionSenseShoeOption(id, name, packName));
+            }
+        }
+        catch (Exception ex)
+        {
+            _monitor.Log($"Could not list Fashion Sense shoes: {ex.Message}", LogLevel.Warn);
+        }
+
+        return result
+            .GroupBy(option => option.Id, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First())
+            .OrderBy(option => option.DisplayName, StringComparer.CurrentCultureIgnoreCase)
+            .ThenBy(option => option.PackName, StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
+    }
+
+    public string? GetCurrentFashionSenseShoeId()
+    {
+        return Game1.player.modData.TryGetValue("FashionSense.CustomShoes.Id", out string? id)
+            && !string.IsNullOrWhiteSpace(id) && !id.Equals("None", StringComparison.OrdinalIgnoreCase)
+            ? id
+            : null;
+    }
+
+    /// <summary>Apply a Fashion Sense shoe for preview without changing any saved outfit.</summary>
+    public void PreviewFashionSenseShoe(string? shoeId)
+    {
+        Game1.player.modData["FashionSense.CustomShoes.Id"] = string.IsNullOrWhiteSpace(shoeId) ? "None" : shoeId;
+        MarkSpriteDirty();
+    }
+
+    /// <summary>Persist only the Fashion Sense shoe ID on an existing saved outfit.</summary>
+    public bool SaveFashionSenseShoe(string outfitName, string? shoeId)
+    {
+        try
+        {
+            object? outfitManager = GetOutfitManager();
+            if (outfitManager is null)
+                return false;
+
+            object? outfitsObject = InvokeExactCompatibleMethod(outfitManager, "GetOutfits", Game1.player, false)
+                ?? InvokeExactCompatibleMethod(outfitManager, "GetOutfits", Game1.player);
+            if (outfitsObject is not IList outfits)
+                return false;
+
+            object? target = outfits.Cast<object?>().FirstOrDefault(outfit =>
+                outfit is not null
+                && string.Equals(GetMemberString(outfit, "Name"), outfitName, StringComparison.OrdinalIgnoreCase));
+            if (target is null || !TrySetMember(target, "ShoesId", string.IsNullOrWhiteSpace(shoeId) ? "None" : shoeId))
+                return false;
+
+            if (!TryInvokeExactCompatibleMethod(outfitManager, "SerializeOutfits", out _, Game1.player, outfitsObject))
+                return false;
+
+            MarkSpriteDirty();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _monitor.Log($"Error saving Fashion Sense shoes for outfit '{outfitName}': {ex}", LogLevel.Warn);
+            return false;
+        }
+    }
+
     /// <summary>Delete a saved Fashion Sense outfit.</summary>
     public bool DeleteOutfit(string outfitName)
     {
@@ -308,6 +402,41 @@ internal sealed class OutfitPreviewRenderer
 
     // Cached render target — recreated if the device is lost
     private RenderTarget2D? _renderTarget;
+    private Texture2D? _fashionSenseShoesIcon;
+
+    /// <summary>Start a reversible preview transaction without reapplying the saved outfit.</summary>
+    public void BeginCurrentAppearancePreview(string outfitName)
+    {
+        if (IsPreviewActive)
+            return;
+
+        _snapshot = TakeSnapshot();
+        _activeOutfitName = outfitName;
+    }
+
+    public Texture2D? GetFashionSenseShoesIcon()
+    {
+        if (_fashionSenseShoesIcon is not null && !_fashionSenseShoesIcon.IsDisposed)
+            return _fashionSenseShoesIcon;
+
+        try
+        {
+            Type? fsType = FindType("FashionSense.FashionSense");
+            object? assetManager = fsType is null ? null : GetStaticField(fsType, "assetManager");
+            if (assetManager is null)
+                return null;
+
+            BindingFlags flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+            _fashionSenseShoesIcon = assetManager.GetType().GetField("shoesButtonTexture", flags)?.GetValue(assetManager) as Texture2D
+                ?? assetManager.GetType().GetProperty("shoesButtonTexture", flags)?.GetValue(assetManager) as Texture2D;
+        }
+        catch
+        {
+            _fashionSenseShoesIcon = null;
+        }
+
+        return _fashionSenseShoesIcon;
+    }
 
     /// <summary>
     /// Draw the quick Ctrl+Click preview using the original compact positioning.
@@ -695,6 +824,21 @@ internal sealed class OutfitPreviewRenderer
     private static object? GetStaticField(Type type, string name)
         => type.GetField(name, BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic)
                ?.GetValue(null);
+
+    private static string? GetMemberString(object target, string name)
+    {
+        BindingFlags flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+        return target.GetType().GetProperty(name, flags)?.GetValue(target)?.ToString()
+            ?? target.GetType().GetField(name, flags)?.GetValue(target)?.ToString();
+    }
+
+    private static bool? GetMemberBool(object target, string name)
+    {
+        BindingFlags flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+        object? value = target.GetType().GetProperty(name, flags)?.GetValue(target)
+            ?? target.GetType().GetField(name, flags)?.GetValue(target);
+        return value as bool?;
+    }
 
     private static object? InvokeExactCompatibleMethod(object target, string name, params object?[] args)
         => TryInvokeExactCompatibleMethod(target, name, out object? result, args) ? result : null;

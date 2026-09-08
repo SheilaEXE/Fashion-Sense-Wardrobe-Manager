@@ -48,6 +48,19 @@ internal static class I18n
     public static string CosmeticShoesTitle => Get("ui.cosmetic_shoes.title");
     public static string CosmeticShoesAutomatic => Get("ui.cosmetic_shoes.automatic");
     public static string CosmeticShoesAutomaticTooltip => Get("ui.cosmetic_shoes.automatic_tooltip");
+    public static string ButtonCpShoes => Get("ui.button.cp_shoes");
+    public static string ButtonFashionSenseShoes => Get("ui.button.fs_shoes");
+    public static string FashionSenseShoesTitle => Get("ui.fs_shoes.title");
+    public static string FashionSenseShoesNone => Get("ui.fs_shoes.none");
+    public static string ErrorSaveFootwearFailed => Get("ui.error.save_footwear_failed");
+    public static string MessageFootwearSaved => Get("ui.message.footwear_saved");
+    public static string SaveFootwearTooltip => Get("ui.tooltip.save_footwear");
+    public static string SaveAppearanceTitle => Get("ui.save_appearance.title");
+    public static string SaveShoesOnly => Get("ui.save_appearance.shoes_only");
+    public static string SaveOverwriteAppearance => Get("ui.save_appearance.overwrite");
+    public static string MessageAppearanceOverwritten => Get("ui.message.appearance_overwritten");
+    public static string CpShoesTooltip => Get("ui.tooltip.cp_shoes");
+    public static string FashionSenseShoesTooltip => Get("ui.tooltip.fs_shoes");
 
     // Modal
     public static string ModalNewCategory     => Get("ui.modal.new_category");

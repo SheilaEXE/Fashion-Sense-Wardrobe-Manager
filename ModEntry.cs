@@ -337,8 +337,14 @@ internal sealed class ModEntry : Mod
         if (!Context.IsWorldReady || Game1.activeClickableMenu is ExpandedOutfitsMenu)
             return;
 
-        if (Game1.player.modData.TryGetValue("FashionSense.CurrentOutfit", out string? outfitName)
-            && !string.IsNullOrWhiteSpace(outfitName))
+        string? outfitName = null;
+        if (!Game1.player.modData.TryGetValue("FashionSense.Outfit.CurrentId", out outfitName)
+            || string.IsNullOrWhiteSpace(outfitName))
+        {
+            Game1.player.modData.TryGetValue("FashionSense.CurrentOutfit", out outfitName);
+        }
+
+        if (!string.IsNullOrWhiteSpace(outfitName))
         {
             _cosmeticShoeManager.ApplyForOutfit(outfitName);
         }

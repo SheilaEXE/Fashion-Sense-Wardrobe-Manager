@@ -69,6 +69,13 @@ internal sealed class CosmeticShoeManager
         if (qualifiedItemId is null)
             return false;
 
+        return ApplyShoe(qualifiedItemId, outfitName);
+    }
+
+    /// <summary>Preview a specific visual-only pair without persisting an outfit assignment.</summary>
+    public bool ApplyShoe(string qualifiedItemId, string contextName = "preview")
+    {
+
         try
         {
             if (ItemRegistry.Create(qualifiedItemId, allowNull: true) is not Boots boots)
@@ -82,7 +89,7 @@ internal sealed class CosmeticShoeManager
         catch (Exception ex)
         {
             if (_reportedInvalidIds.Add(qualifiedItemId))
-                _monitor.Log($"Could not apply cosmetic shoes '{qualifiedItemId}' for outfit '{outfitName}': {ex.Message}", LogLevel.Warn);
+                _monitor.Log($"Could not apply cosmetic shoes '{qualifiedItemId}' for '{contextName}': {ex.Message}", LogLevel.Warn);
             return false;
         }
     }
@@ -108,6 +115,13 @@ internal sealed class CosmeticShoeManager
             .OrderBy(boots => boots.DisplayName, StringComparer.CurrentCultureIgnoreCase)
             .ThenBy(boots => boots.ItemId, StringComparer.OrdinalIgnoreCase)
             .ToList();
+    }
+
+    public void ApplyEquippedBootAppearance()
+    {
+        string color = Game1.player.boots.Value?.GetBootsColorString() ?? "12";
+        if (!Game1.player.shoes.Value.Equals(color, StringComparison.Ordinal))
+            Game1.player.changeShoeColor(color);
     }
 
     private Dictionary<string, string> Load()

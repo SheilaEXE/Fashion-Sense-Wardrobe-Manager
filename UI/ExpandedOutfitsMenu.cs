@@ -84,6 +84,9 @@ internal sealed class ExpandedOutfitsMenu : IClickableMenu
 
     // Grid scroll
     private int _scrollOffset = 0;
+    private string? _hoveredTruncatedOutfitName;
+    private double _hoveredTruncatedOutfitMs;
+    private const double OutfitNameTooltipDelayMs = 400;
 
     // Selected outfit (for preview)
     private string? _selectedOutfit;
@@ -206,6 +209,8 @@ internal sealed class ExpandedOutfitsMenu : IClickableMenu
     private Rectangle _rightArrow;
     private Rectangle _equipButton;
     private Rectangle _cosmeticShoeButton;
+    private Rectangle _fashionSenseShoeButton;
+    private Rectangle _saveFootwearButton;
     private Rectangle _createCategoryButton;   // kept as alias → _createButton
 
     // Extra buttons (only visible when a custom category is active)
@@ -241,6 +246,16 @@ internal sealed class ExpandedOutfitsMenu : IClickableMenu
     private bool _shoePickerOpen;
     private int _shoePickerScroll;
     private List<Boots> _shoeOptions = new();
+    private bool _fashionSenseShoePickerOpen;
+    private int _fashionSenseShoePickerScroll;
+    private List<OutfitPreviewRenderer.FashionSenseShoeOption> _fashionSenseShoeOptions = new();
+    private bool _footwearEditing;
+    private string? _pendingCosmeticShoeId;
+    private string? _pendingFashionSenseShoeId;
+    private bool _saveAppearanceChoiceOpen;
+    private Rectangle _saveShoesOnlyButton;
+    private Rectangle _overwriteAppearanceButton;
+    private Rectangle _cancelSaveAppearanceButton;
 
     // Constructor
 
@@ -435,8 +450,18 @@ internal sealed class ExpandedOutfitsMenu : IClickableMenu
             _schedulePanel.DrawSideTabs(b);
         }
 
+        if (_hoveredTruncatedOutfitName is not null
+            && _hoveredTruncatedOutfitMs >= OutfitNameTooltipDelayMs)
+        {
+            drawHoverText(b, _hoveredTruncatedOutfitName, Game1.smallFont);
+        }
+
         if (_shoePickerOpen)
             DrawShoePicker(b);
+        else if (_fashionSenseShoePickerOpen)
+            DrawFashionSenseShoePicker(b);
+        else if (_saveAppearanceChoiceOpen)
+            DrawSaveAppearanceChoice(b);
 
         drawMouse(b);
     }
@@ -446,6 +471,18 @@ internal sealed class ExpandedOutfitsMenu : IClickableMenu
         if (_shoePickerOpen)
         {
             HandleShoePickerClick(x, y);
+            return;
+        }
+
+        if (_fashionSenseShoePickerOpen)
+        {
+            HandleFashionSenseShoePickerClick(x, y);
+            return;
+        }
+
+        if (_saveAppearanceChoiceOpen)
+        {
+            HandleSaveAppearanceChoiceClick(x, y);
             return;
         }
 
@@ -908,6 +945,24 @@ internal sealed class ExpandedOutfitsMenu : IClickableMenu
             return;
         }
 
+        if (_selectedOutfit is not null
+            && !_deleteOutfitMode
+            && !_scheduleOutfitSelectionMode
+            && _fashionSenseShoeButton.Contains(x, y))
+        {
+            OpenFashionSenseShoePicker();
+            return;
+        }
+
+        if (_selectedOutfit is not null
+            && !_deleteOutfitMode
+            && !_scheduleOutfitSelectionMode
+            && _saveFootwearButton.Contains(x, y))
+        {
+            OpenSaveAppearanceChoice();
+            return;
+        }
+
         // Equip / Confirm button
         if (_equipButton.Contains(x, y))
         {
@@ -1191,9 +1246,11 @@ internal sealed class ExpandedOutfitsMenu : IClickableMenu
 
         if (key == Keys.Escape)
         {
-            if (_shoePickerOpen)
+            if (_shoePickerOpen || _fashionSenseShoePickerOpen || _saveAppearanceChoiceOpen)
             {
                 _shoePickerOpen = false;
+                _fashionSenseShoePickerOpen = false;
+                _saveAppearanceChoiceOpen = false;
                 Game1.playSound("smallSelect");
             }
             else if (_scheduleOutfitSelectionMode)
@@ -1298,6 +1355,15 @@ internal sealed class ExpandedOutfitsMenu : IClickableMenu
             return;
         }
 
+
+        if (_fashionSenseShoePickerOpen)
+        {
+            int maxScroll = GetFashionSenseShoePickerMaxScroll();
+            _fashionSenseShoePickerScroll = Math.Clamp(
+                _fashionSenseShoePickerScroll + (direction > 0 ? -1 : 1), 0, maxScroll);
+            return;
+        }
+
         if (_schedulePanel.IsOpen && !_scheduleOutfitSelectionMode
             && _schedulePanel.HandleScroll(direction, mx, my))
         {
@@ -1372,6 +1438,48 @@ internal sealed class ExpandedOutfitsMenu : IClickableMenu
         }
 
         _backspaceWasDown = backspaceDown;
+        UpdateOutfitNameTooltip(time);
+    }
+
+    private void UpdateOutfitNameTooltip(GameTime time)
+    {
+        bool gridUnavailable = IsNamingModalOpen
+            || _confirmDeleteOutfits
+            || _confirmDeleteSavedOutfits
+            || _confirmDeleteCategory
+            || _confirmDeleteTag
+            || _confirmUpdateOutfit
+            || IsAssignmentModeActive
+            || (_schedulePanel.IsOpen && !_scheduleOutfitSelectionMode)
+            || _shoePickerOpen
+            || _fashionSenseShoePickerOpen
+            || _saveAppearanceChoiceOpen;
+
+        int hoveredIndex = gridUnavailable
+            ? -1
+            : HitTestGridRow(Game1.getMouseX(), Game1.getMouseY());
+
+        string? hoveredName = hoveredIndex >= 0 && hoveredIndex < _visibleOutfits.Count
+            ? _visibleOutfits[hoveredIndex]
+            : null;
+
+        if (hoveredName is not null
+            && TruncateString(hoveredName, Game1.smallFont, OutfitNameMaxW) == hoveredName)
+        {
+            hoveredName = null;
+        }
+
+        if (hoveredName != _hoveredTruncatedOutfitName)
+        {
+            _hoveredTruncatedOutfitName = hoveredName;
+            _hoveredTruncatedOutfitMs = 0;
+            return;
+        }
+
+        if (hoveredName is not null)
+            _hoveredTruncatedOutfitMs += time.ElapsedGameTime.TotalMilliseconds;
+        else
+            _hoveredTruncatedOutfitMs = 0;
     }
 
     private void DeleteLastChar()
@@ -2137,25 +2245,19 @@ internal sealed class ExpandedOutfitsMenu : IClickableMenu
 
         if (_selectedOutfit is not null && !_deleteOutfitMode && !_scheduleOutfitSelectionMode)
         {
-            bool shoeHovered = _cosmeticShoeButton.Contains(Game1.getMouseX(), Game1.getMouseY());
-            drawTextureBox(b, Game1.mouseCursors,
-                new Rectangle(432, 439, 9, 9),
-                _cosmeticShoeButton.X, _cosmeticShoeButton.Y,
-                _cosmeticShoeButton.Width, _cosmeticShoeButton.Height,
-                shoeHovered ? Color.Wheat : Color.White, 4f, drawShadow: false);
+            DrawCompactShoeButton(b, _cosmeticShoeButton, I18n.ButtonCpShoes, fashionSense: false);
+            DrawCompactShoeButton(b, _fashionSenseShoeButton, I18n.ButtonFashionSenseShoes, fashionSense: true);
 
-            string? shoeId = _cosmeticShoeManager.GetShoeId(_selectedOutfit);
-            string shoeName = I18n.CosmeticShoesAutomatic;
-            if (shoeId is not null && ItemRegistry.Create(shoeId, allowNull: true) is Boots selectedBoots)
-                shoeName = selectedBoots.DisplayName;
-
-            string shoeLabel = $"{I18n.ButtonCosmeticShoes}: {shoeName}";
-            shoeLabel = TruncateString(shoeLabel, Game1.smallFont, _cosmeticShoeButton.Width - 16);
-            Vector2 shoeSize = Game1.smallFont.MeasureString(shoeLabel);
-            Utility.drawTextWithShadow(b, shoeLabel, Game1.smallFont,
-                new Vector2(_cosmeticShoeButton.Center.X - shoeSize.X / 2f,
-                    _cosmeticShoeButton.Center.Y - shoeSize.Y / 2f),
-                Game1.textColor);
+            bool saveHovered = _saveFootwearButton.Contains(Game1.getMouseX(), Game1.getMouseY());
+            Color saveTint = saveHovered ? Color.PaleGreen : Color.White;
+            drawTextureBox(b, Game1.mouseCursors, new Rectangle(432, 439, 9, 9),
+                _saveFootwearButton.X, _saveFootwearButton.Y,
+                _saveFootwearButton.Width, _saveFootwearButton.Height,
+                saveTint, 4f, drawShadow: false);
+            b.Draw(Game1.mouseCursors,
+                new Rectangle(_saveFootwearButton.Center.X - 14, _saveFootwearButton.Center.Y - 12, 28, 24),
+                new Rectangle(211, 428, 7, 6),
+                Color.White);
         }
 
         // Equip / Confirm button
@@ -2182,17 +2284,52 @@ internal sealed class ExpandedOutfitsMenu : IClickableMenu
         Utility.drawTextWithShadow(b, buttonLabel, Game1.smallFont,
             new Vector2(_equipButton.Center.X - esz.X / 2f, _equipButton.Center.Y - esz.Y / 2f),
             equipAvailable ? Game1.textColor : Color.DarkGray);
+
+        if (_cosmeticShoeButton.Contains(Game1.getMouseX(), Game1.getMouseY()))
+            drawHoverText(b, I18n.CpShoesTooltip, Game1.smallFont);
+        else if (_fashionSenseShoeButton.Contains(Game1.getMouseX(), Game1.getMouseY()))
+            drawHoverText(b, I18n.FashionSenseShoesTooltip, Game1.smallFont);
+        else if (_saveFootwearButton.Contains(Game1.getMouseX(), Game1.getMouseY()))
+            drawHoverText(b, I18n.SaveFootwearTooltip, Game1.smallFont);
+    }
+
+    private void DrawCompactShoeButton(SpriteBatch b, Rectangle bounds, string label, bool fashionSense)
+    {
+        bool hovered = bounds.Contains(Game1.getMouseX(), Game1.getMouseY());
+        drawTextureBox(b, Game1.mouseCursors, new Rectangle(432, 439, 9, 9),
+            bounds.X, bounds.Y, bounds.Width, bounds.Height,
+            hovered ? Color.Wheat : Color.White, 4f, drawShadow: false);
+
+        int iconX = bounds.X + 7;
+        if (fashionSense && _renderer.GetFashionSenseShoesIcon() is Texture2D fsIcon)
+        {
+            b.Draw(fsIcon, new Rectangle(iconX, bounds.Center.Y - 12, 24, 24),
+                new Rectangle(0, 0, fsIcon.Width, fsIcon.Height), Color.White);
+        }
+        else
+        {
+            string? shoeId = _footwearEditing ? _pendingCosmeticShoeId : _cosmeticShoeManager.GetShoeId(_selectedOutfit!);
+            Boots? iconBoots = null;
+            if (shoeId is not null)
+                iconBoots = ItemRegistry.Create(shoeId, allowNull: true) as Boots;
+            iconBoots ??= Game1.player.boots.Value;
+            iconBoots?.drawInMenu(b, new Vector2(iconX - 7, bounds.Center.Y - 21), 0.45f);
+        }
+
+        Vector2 size = Game1.smallFont.MeasureString(label);
+        Utility.drawTextWithShadow(b, label, Game1.smallFont,
+            new Vector2(iconX + 32, bounds.Center.Y - size.Y / 2f), Game1.textColor);
     }
 
     private void OpenShoePicker()
     {
-        if (_selectedOutfit is null)
+        if (!BeginFootwearEdit())
             return;
 
         _shoeOptions = _cosmeticShoeManager.GetAvailableShoes();
         _shoePickerScroll = 0;
 
-        string? selectedId = _cosmeticShoeManager.GetShoeId(_selectedOutfit);
+        string? selectedId = _pendingCosmeticShoeId;
         if (selectedId is not null)
         {
             int selectedIndex = _shoeOptions.FindIndex(boots =>
@@ -2220,7 +2357,7 @@ internal sealed class ExpandedOutfitsMenu : IClickableMenu
         const int visibleRows = 5;
         int firstIndex = _shoePickerScroll * columns;
         int optionCount = _shoeOptions.Count + 1;
-        string? selectedId = _selectedOutfit is null ? null : _cosmeticShoeManager.GetShoeId(_selectedOutfit);
+        string? selectedId = _pendingCosmeticShoeId;
 
         for (int slot = 0; slot < columns * visibleRows; slot++)
         {
@@ -2322,16 +2459,11 @@ internal sealed class ExpandedOutfitsMenu : IClickableMenu
             if (_selectedOutfit is null)
                 return;
 
-            string outfitName = _selectedOutfit;
             string? shoeId = optionIndex == 0 ? null : _shoeOptions[optionIndex - 1].QualifiedItemId;
-            _cosmeticShoeManager.SetShoe(outfitName, shoeId);
+            _pendingCosmeticShoeId = shoeId;
             _shoePickerOpen = false;
 
-            if (_renderer.IsPreviewActive)
-                _renderer.RestoreOriginal();
-
-            _selectedOutfit = null;
-            SelectOutfit(outfitName);
+            ApplyPendingFootwearPreview();
             Game1.playSound("coin");
             return;
         }
@@ -2372,6 +2504,285 @@ internal sealed class ExpandedOutfitsMenu : IClickableMenu
 
     private static Rectangle GetShoePickerDownBounds(Rectangle modal)
         => new(modal.Right - 52, modal.Bottom - 58, 40, 40);
+
+    private bool BeginFootwearEdit()
+    {
+        if (_selectedOutfit is null)
+            return false;
+
+        if (_footwearEditing)
+            return true;
+
+        if (!_renderer.IsPreviewActive)
+        {
+            if (_selectedOutfit.Equals(GetCurrentOutfitName(), StringComparison.OrdinalIgnoreCase))
+                _renderer.BeginCurrentAppearancePreview(_selectedOutfit);
+            else if (!_renderer.ApplyOutfitForPreview(_selectedOutfit))
+                return false;
+        }
+
+        _pendingCosmeticShoeId = _cosmeticShoeManager.GetShoeId(_selectedOutfit);
+        _pendingFashionSenseShoeId = _renderer.GetCurrentFashionSenseShoeId();
+        _footwearEditing = true;
+        return true;
+    }
+
+    private void ApplyPendingFootwearPreview()
+    {
+        _renderer.PreviewFashionSenseShoe(_pendingFashionSenseShoeId);
+
+        if (_pendingCosmeticShoeId is not null)
+            _cosmeticShoeManager.ApplyShoe(_pendingCosmeticShoeId, _selectedOutfit ?? "preview");
+        else
+            _cosmeticShoeManager.ApplyEquippedBootAppearance();
+    }
+
+    private void SaveFootwearChanges()
+    {
+        if (!_footwearEditing || _selectedOutfit is null)
+            return;
+
+        if (!_renderer.SaveFashionSenseShoe(_selectedOutfit, _pendingFashionSenseShoeId))
+        {
+            Game1.addHUDMessage(new HUDMessage(I18n.ErrorSaveFootwearFailed, HUDMessage.error_type));
+            return;
+        }
+
+        _cosmeticShoeManager.SetShoe(_selectedOutfit, _pendingCosmeticShoeId);
+        _renderer.CommitPreview();
+        _footwearEditing = false;
+        Game1.addHUDMessage(new HUDMessage(I18n.MessageFootwearSaved));
+        Game1.playSound("newArtifact");
+    }
+
+    private void OpenSaveAppearanceChoice()
+    {
+        if (_selectedOutfit is null)
+            return;
+
+        _saveAppearanceChoiceOpen = true;
+        _shoePickerOpen = false;
+        _fashionSenseShoePickerOpen = false;
+        UpdateSaveAppearanceChoiceLayout();
+        Game1.playSound("bigSelect");
+    }
+
+    private void DrawSaveAppearanceChoice(SpriteBatch b)
+    {
+        b.Draw(Game1.fadeToBlackRect, Game1.graphics.GraphicsDevice.Viewport.Bounds, Color.Black * 0.55f);
+        Rectangle modal = GetSaveAppearanceChoiceBounds();
+        drawTextureBox(b, Game1.mouseCursors, new Rectangle(384, 373, 18, 18),
+            modal.X, modal.Y, modal.Width, modal.Height, Color.White, 4f, drawShadow: true);
+
+        SpriteText.drawStringWithScrollCenteredAt(b, I18n.SaveAppearanceTitle, modal.Center.X, modal.Y + 32);
+        string outfitLabel = TruncateString(_selectedOutfit ?? string.Empty, Game1.smallFont, modal.Width - 64);
+        Vector2 outfitSize = Game1.smallFont.MeasureString(outfitLabel);
+        Utility.drawTextWithShadow(b, outfitLabel, Game1.smallFont,
+            new Vector2(modal.Center.X - outfitSize.X / 2f, modal.Y + 110), Game1.textColor);
+
+        DrawMenuButton(b, _saveShoesOnlyButton, I18n.SaveShoesOnly, Color.PaleGreen);
+        DrawMenuButton(b, _overwriteAppearanceButton, I18n.SaveOverwriteAppearance, Color.Wheat);
+        DrawMenuButton(b, _cancelSaveAppearanceButton, I18n.ButtonCancel, Color.Salmon);
+    }
+
+    private void HandleSaveAppearanceChoiceClick(int x, int y)
+    {
+        if (_saveShoesOnlyButton.Contains(x, y))
+        {
+            _saveAppearanceChoiceOpen = false;
+            if (!_footwearEditing && !BeginFootwearEdit())
+                return;
+            SaveFootwearChanges();
+            return;
+        }
+
+        if (_overwriteAppearanceButton.Contains(x, y))
+        {
+            _saveAppearanceChoiceOpen = false;
+            SaveCompleteAppearance();
+            return;
+        }
+
+        if (_cancelSaveAppearanceButton.Contains(x, y)
+            || !GetSaveAppearanceChoiceBounds().Contains(x, y))
+        {
+            _saveAppearanceChoiceOpen = false;
+            Game1.playSound("smallSelect");
+        }
+    }
+
+    private void SaveCompleteAppearance()
+    {
+        if (_selectedOutfit is null)
+            return;
+
+        // If footwear editing never started, preserve the current CP assignment.
+        string? cosmeticShoeId = _footwearEditing
+            ? _pendingCosmeticShoeId
+            : _cosmeticShoeManager.GetShoeId(_selectedOutfit);
+
+        if (!_renderer.OverrideOutfitWithCurrentAppearance(_selectedOutfit))
+        {
+            Game1.addHUDMessage(new HUDMessage(I18n.ErrorUpdateOutfitFailed, HUDMessage.error_type));
+            return;
+        }
+
+        _cosmeticShoeManager.SetShoe(_selectedOutfit, cosmeticShoeId);
+        if (_renderer.IsPreviewActive)
+            _renderer.CommitPreview();
+        _footwearEditing = false;
+        _pendingCosmeticShoeId = null;
+        _pendingFashionSenseShoeId = null;
+        RefreshParentMenu();
+        Game1.addHUDMessage(new HUDMessage(I18n.MessageAppearanceOverwritten));
+        Game1.playSound("newArtifact");
+    }
+
+    private void UpdateSaveAppearanceChoiceLayout()
+    {
+        Rectangle modal = GetSaveAppearanceChoiceBounds();
+        int buttonX = modal.X + 52;
+        int buttonWidth = modal.Width - 104;
+        _saveShoesOnlyButton = new Rectangle(buttonX, modal.Y + 148, buttonWidth, 52);
+        _overwriteAppearanceButton = new Rectangle(buttonX, modal.Y + 212, buttonWidth, 52);
+        _cancelSaveAppearanceButton = new Rectangle(modal.Center.X - 90, modal.Bottom - 66, 180, 46);
+    }
+
+    private static Rectangle GetSaveAppearanceChoiceBounds()
+    {
+        const int modalWidth = 660;
+        const int modalHeight = 350;
+        return new Rectangle(
+            Game1.uiViewport.Width / 2 - modalWidth / 2,
+            Game1.uiViewport.Height / 2 - modalHeight / 2,
+            modalWidth,
+            modalHeight);
+    }
+
+    private void OpenFashionSenseShoePicker()
+    {
+        if (!BeginFootwearEdit())
+            return;
+
+        _fashionSenseShoeOptions = _renderer.GetAvailableFashionSenseShoes();
+        _fashionSenseShoePickerScroll = 0;
+
+        if (_pendingFashionSenseShoeId is not null)
+        {
+            int selectedIndex = _fashionSenseShoeOptions.FindIndex(option =>
+                option.Id.Equals(_pendingFashionSenseShoeId, StringComparison.OrdinalIgnoreCase)) + 1;
+            if (selectedIndex > 0)
+                _fashionSenseShoePickerScroll = Math.Clamp(selectedIndex / 2 - 2, 0, GetFashionSenseShoePickerMaxScroll());
+        }
+
+        _fashionSenseShoePickerOpen = true;
+        CloseTransientControls();
+        Game1.playSound("bigSelect");
+    }
+
+    private void DrawFashionSenseShoePicker(SpriteBatch b)
+    {
+        b.Draw(Game1.fadeToBlackRect, Game1.graphics.GraphicsDevice.Viewport.Bounds, Color.Black * 0.55f);
+        Rectangle modal = GetShoePickerBounds();
+        drawTextureBox(b, Game1.mouseCursors, new Rectangle(384, 373, 18, 18),
+            modal.X, modal.Y, modal.Width, modal.Height, Color.White, 4f, drawShadow: true);
+        SpriteText.drawStringWithScrollCenteredAt(b, I18n.FashionSenseShoesTitle, modal.Center.X, modal.Y + 28);
+
+        const int columns = 2;
+        const int visibleRows = 5;
+        int firstIndex = _fashionSenseShoePickerScroll * columns;
+        int optionCount = _fashionSenseShoeOptions.Count + 1;
+
+        for (int slot = 0; slot < columns * visibleRows; slot++)
+        {
+            int optionIndex = firstIndex + slot;
+            if (optionIndex >= optionCount)
+                break;
+
+            Rectangle cell = GetShoePickerCellBounds(modal, slot);
+            OutfitPreviewRenderer.FashionSenseShoeOption? option = optionIndex == 0
+                ? null
+                : _fashionSenseShoeOptions[optionIndex - 1];
+            bool selected = option is null
+                ? _pendingFashionSenseShoeId is null
+                : option.Id.Equals(_pendingFashionSenseShoeId, StringComparison.OrdinalIgnoreCase);
+            bool hovered = cell.Contains(Game1.getMouseX(), Game1.getMouseY());
+            drawTextureBox(b, Game1.mouseCursors, new Rectangle(432, 439, 9, 9),
+                cell.X, cell.Y, cell.Width, cell.Height,
+                selected ? Color.PaleGreen : hovered ? Color.Wheat : Color.White,
+                4f, drawShadow: false);
+
+            string label = option is null
+                ? I18n.FashionSenseShoesNone
+                : string.IsNullOrWhiteSpace(option.PackName)
+                    ? option.DisplayName
+                    : $"{option.DisplayName} — {option.PackName}";
+            label = TruncateString(label, Game1.smallFont, cell.Width - 28);
+            Vector2 size = Game1.smallFont.MeasureString(label);
+            Utility.drawTextWithShadow(b, label, Game1.smallFont,
+                new Vector2(cell.X + 14, cell.Center.Y - size.Y / 2f), Game1.textColor);
+        }
+
+        DrawShoePickerFooter(b, modal, _fashionSenseShoePickerScroll, GetFashionSenseShoePickerMaxScroll());
+    }
+
+    private void HandleFashionSenseShoePickerClick(int x, int y)
+    {
+        Rectangle modal = GetShoePickerBounds();
+        if (GetShoePickerUpBounds(modal).Contains(x, y))
+        {
+            _fashionSenseShoePickerScroll = Math.Max(0, _fashionSenseShoePickerScroll - 1);
+            Game1.playSound("shwip");
+            return;
+        }
+        if (GetShoePickerDownBounds(modal).Contains(x, y))
+        {
+            _fashionSenseShoePickerScroll = Math.Min(GetFashionSenseShoePickerMaxScroll(), _fashionSenseShoePickerScroll + 1);
+            Game1.playSound("shwip");
+            return;
+        }
+        if (!modal.Contains(x, y) || GetShoePickerCloseBounds(modal).Contains(x, y))
+        {
+            _fashionSenseShoePickerOpen = false;
+            Game1.playSound("smallSelect");
+            return;
+        }
+
+        const int columns = 2;
+        const int visibleRows = 5;
+        int firstIndex = _fashionSenseShoePickerScroll * columns;
+        int optionCount = _fashionSenseShoeOptions.Count + 1;
+        for (int slot = 0; slot < columns * visibleRows; slot++)
+        {
+            int optionIndex = firstIndex + slot;
+            if (optionIndex >= optionCount || !GetShoePickerCellBounds(modal, slot).Contains(x, y))
+                continue;
+
+            _pendingFashionSenseShoeId = optionIndex == 0 ? null : _fashionSenseShoeOptions[optionIndex - 1].Id;
+            _fashionSenseShoePickerOpen = false;
+            ApplyPendingFootwearPreview();
+            Game1.playSound("coin");
+            return;
+        }
+    }
+
+    private int GetFashionSenseShoePickerMaxScroll()
+        => Math.Max(0, (int)Math.Ceiling((_fashionSenseShoeOptions.Count + 1) / 2d) - 5);
+
+    private void DrawShoePickerFooter(SpriteBatch b, Rectangle modal, int scroll, int maxScroll)
+    {
+        Rectangle close = GetShoePickerCloseBounds(modal);
+        DrawMenuButton(b, close, I18n.ButtonClose);
+        if (maxScroll <= 0)
+            return;
+
+        DrawArrowButton(b, GetShoePickerUpBounds(modal), LeftArrowSrc, rotated: true);
+        DrawArrowButton(b, GetShoePickerDownBounds(modal), RightArrowSrc, rotated: true);
+        string page = $"{scroll + 1}/{maxScroll + 1}";
+        Vector2 size = Game1.smallFont.MeasureString(page);
+        Utility.drawTextWithShadow(b, page, Game1.smallFont,
+            new Vector2(modal.Right - 86 - size.X / 2f, close.Center.Y - size.Y / 2f), Game1.textColor);
+    }
 
     private void DrawCreationModal(SpriteBatch b)
     {
@@ -3066,6 +3477,10 @@ internal sealed class ExpandedOutfitsMenu : IClickableMenu
         if (_selectedOutfit == outfitName)
             return;
 
+        _footwearEditing = false;
+        _pendingCosmeticShoeId = null;
+        _pendingFashionSenseShoeId = null;
+
         // Restore before applying another preview
         if (_renderer.IsPreviewActive)
             _renderer.RestoreOriginal();
@@ -3081,6 +3496,16 @@ internal sealed class ExpandedOutfitsMenu : IClickableMenu
     {
         if (_selectedOutfit is null)
             return;
+
+        // Footwear edits require the explicit heart button. If they weren't
+        // saved, discard them before equipping the selected saved outfit.
+        if (_footwearEditing)
+        {
+            if (_renderer.IsPreviewActive)
+                _renderer.RestoreOriginal();
+            _renderer.EquipOutfitImmediately(_selectedOutfit);
+            _footwearEditing = false;
+        }
 
         // Preview is already applied; commit by NOT restoring on close
         Game1.playSound("smallSelect");
@@ -3219,9 +3644,9 @@ internal sealed class ExpandedOutfitsMenu : IClickableMenu
         // Right preview panel
         _previewPanel = new Rectangle(
             ox + width - PreviewPanelW - Padding,
-            oy + Padding + 52,
+            oy + Padding,
             PreviewPanelW,
-            height - Padding * 2 - 52);
+            height - Padding * 2);
 
         // Equip button anchored near the bottom of the preview panel
         int equipY = _previewPanel.Bottom - 68;
@@ -3231,11 +3656,17 @@ internal sealed class ExpandedOutfitsMenu : IClickableMenu
             160, 52);
 
         // Direction arrows sit ABOVE the equip button (horizontally centred, below portrait name)
-        _cosmeticShoeButton = new Rectangle(
-            _previewPanel.X + 24,
-            equipY - 48,
-            _previewPanel.Width - 48,
-            40);
+        int footwearY = equipY - 48;
+        const int compactButtonW = 78;
+        const int compactButtonH = 36;
+        const int compactGap = 6;
+        int compactGroupW = compactButtonW * 2 + compactButtonH + compactGap * 2;
+        int compactX = _previewPanel.Center.X - compactGroupW / 2;
+        _cosmeticShoeButton = new Rectangle(compactX, footwearY, compactButtonW, compactButtonH);
+        _fashionSenseShoeButton = new Rectangle(
+            _cosmeticShoeButton.Right + compactGap, footwearY, compactButtonW, compactButtonH);
+        _saveFootwearButton = new Rectangle(
+            _fashionSenseShoeButton.Right + compactGap, footwearY, compactButtonH, compactButtonH);
 
         int arrowY = equipY - 96;
         _leftArrow  = new Rectangle(_previewPanel.Center.X - 88, arrowY, 40, 36);
@@ -3582,6 +4013,10 @@ internal sealed class ExpandedOutfitsMenu : IClickableMenu
         if (restoreOriginal && _renderer.IsPreviewActive)
             _renderer.RestoreOriginal();
 
+        _footwearEditing = false;
+        _pendingCosmeticShoeId = null;
+        _pendingFashionSenseShoeId = null;
+
         UnhookTextInput();
         RefreshParentMenu();
 
@@ -3785,7 +4220,12 @@ internal sealed class ExpandedOutfitsMenu : IClickableMenu
     private static string? GetCurrentOutfitName()
     {
         // Try to read the active outfit name from FS modData
-        if (Game1.player.modData.TryGetValue("FashionSense.CurrentOutfit", out string? name))
+        if (Game1.player.modData.TryGetValue("FashionSense.Outfit.CurrentId", out string? currentId)
+            && !string.IsNullOrWhiteSpace(currentId))
+            return currentId;
+
+        if (Game1.player.modData.TryGetValue("FashionSense.CurrentOutfit", out string? name)
+            && !string.IsNullOrWhiteSpace(name))
             return name;
 
         return null;
