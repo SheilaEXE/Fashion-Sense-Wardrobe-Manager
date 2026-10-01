@@ -1,6 +1,7 @@
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
+using StardewModdingAPI;
 using StardewValley;
 using StardewValley.BellsAndWhistles;
 using StardewValley.Menus;
@@ -9,6 +10,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using System.IO;
 
 namespace FashionSenseWardrobeManager;
 
@@ -101,6 +103,23 @@ internal sealed class ExpandedOutfitsMenu : IClickableMenu
     private Rectangle _createSubNewColorTag;
     private Rectangle _createSubExportOrganization;
     private Rectangle _createSubImportOrganization;
+    private Rectangle _createSubExportSprite;
+
+    // Sprite export modal. Facing values are Stardew directions: back, right, front, left.
+    private bool _spriteExportOpen;
+    private readonly HashSet<int> _spriteExportFacings = new() { 2 };
+    private readonly HashSet<int> _spriteExportScales = new() { 1, 4 };
+    private Rectangle _exportFrontOption;
+    private Rectangle _exportBackOption;
+    private Rectangle _exportLeftOption;
+    private Rectangle _exportRightOption;
+    private Rectangle _export1xOption;
+    private Rectangle _export2xOption;
+    private Rectangle _export4xOption;
+    private Rectangle _export6xOption;
+    private Rectangle _exportSpritesButton;
+    private Rectangle _cancelSpriteExportButton;
+    private readonly string _spriteExportDirectory;
 
     // "Create category / tag" modal
     private bool     _creatingCategory    = false;
@@ -269,7 +288,8 @@ internal sealed class ExpandedOutfitsMenu : IClickableMenu
         CosmeticShoeManager cosmeticShoeManager,
         OutfitPreviewRenderer renderer,
         IReadOnlyList<string> allOutfitNames,
-        IClickableMenu?       parentMenu = null)
+        IClickableMenu?       parentMenu = null,
+        string?               spriteExportDirectory = null)
         : base(
             x:      Game1.uiViewport.Width  / 2 - WindowWidth  / 2,
             y:      Game1.uiViewport.Height / 2 - WindowHeight / 2,
@@ -284,6 +304,8 @@ internal sealed class ExpandedOutfitsMenu : IClickableMenu
         _renderer        = renderer;
         _returnMenu      = parentMenu;
         _allOutfitNames  = allOutfitNames.Distinct().ToList();
+        _spriteExportDirectory = spriteExportDirectory
+            ?? Path.Combine(Constants.DataPath, "Fashion Sense Wardrobe Manager", "Exports");
 
         _categories = _categoryManager.LoadCategories();
         _tags       = _tagManager.LoadTags();
@@ -407,7 +429,11 @@ internal sealed class ExpandedOutfitsMenu : IClickableMenu
         // Native Stardew Valley close button.
         upperRightCloseButton?.draw(b);
 
-        if (IsNamingModalOpen)
+        if (_spriteExportOpen)
+        {
+            DrawSpriteExportModal(b);
+        }
+        else if (IsNamingModalOpen)
         {
             DrawCreationModal(b);
         }
@@ -486,6 +512,12 @@ internal sealed class ExpandedOutfitsMenu : IClickableMenu
             return;
         }
 
+        if (_spriteExportOpen)
+        {
+            HandleSpriteExportClick(x, y);
+            return;
+        }
+
         // Close Create submenu if clicking anywhere outside it
         if (_createSubmenuOpen
             && !_createButton.Contains(x, y)
@@ -493,7 +525,8 @@ internal sealed class ExpandedOutfitsMenu : IClickableMenu
             && !_createSubNewTag.Contains(x, y)
             && !_createSubNewColorTag.Contains(x, y)
             && !_createSubExportOrganization.Contains(x, y)
-            && !_createSubImportOrganization.Contains(x, y))
+            && !_createSubImportOrganization.Contains(x, y)
+            && !_createSubExportSprite.Contains(x, y))
         {
             _createSubmenuOpen = false;
             // Don't return — still process the click below
@@ -1112,6 +1145,14 @@ internal sealed class ExpandedOutfitsMenu : IClickableMenu
             return true;
         }
 
+        if (_createSubExportSprite.Contains(x, y))
+        {
+            _createSubmenuOpen = false;
+            _spriteExportOpen = true;
+            Game1.playSound("smallSelect");
+            return true;
+        }
+
         return false;
     }
 
@@ -1251,6 +1292,11 @@ internal sealed class ExpandedOutfitsMenu : IClickableMenu
                 _shoePickerOpen = false;
                 _fashionSenseShoePickerOpen = false;
                 _saveAppearanceChoiceOpen = false;
+                Game1.playSound("smallSelect");
+            }
+            else if (_spriteExportOpen)
+            {
+                _spriteExportOpen = false;
                 Game1.playSound("smallSelect");
             }
             else if (_scheduleOutfitSelectionMode)
@@ -1630,6 +1676,7 @@ internal sealed class ExpandedOutfitsMenu : IClickableMenu
         DrawCreateSubItem(b, _createSubNewColorTag, I18n.ButtonNewColorTag, mx, my);
         DrawCreateSubItem(b, _createSubExportOrganization, I18n.ButtonExportOrganization, mx, my);
         DrawCreateSubItem(b, _createSubImportOrganization, I18n.ButtonImportOrganization, mx, my);
+        DrawCreateSubItem(b, _createSubExportSprite, I18n.ButtonExportSprite, mx, my);
     }
 
     private void DrawCreateSubItem(SpriteBatch b, Rectangle bounds, string label, int mx, int my)
@@ -2291,6 +2338,121 @@ internal sealed class ExpandedOutfitsMenu : IClickableMenu
             drawHoverText(b, I18n.FashionSenseShoesTooltip, Game1.smallFont);
         else if (_saveFootwearButton.Contains(Game1.getMouseX(), Game1.getMouseY()))
             drawHoverText(b, I18n.SaveFootwearTooltip, Game1.smallFont);
+    }
+
+    private void DrawSpriteExportModal(SpriteBatch b)
+    {
+        b.Draw(Game1.fadeToBlackRect, Game1.graphics.GraphicsDevice.Viewport.Bounds, Color.Black * 0.5f);
+
+        Rectangle modal = GetSpriteExportModalBounds();
+        drawTextureBox(b, Game1.mouseCursors,
+            new Rectangle(384, 373, 18, 18),
+            modal.X, modal.Y, modal.Width, modal.Height,
+            Color.White, 4f, drawShadow: true);
+
+        SpriteText.drawStringWithScrollCenteredAt(b, I18n.SpriteExportTitle, modal.Center.X, modal.Y + 34);
+        DrawSpriteExportSection(b, I18n.SpriteExportDirections, modal.X + 42, modal.Y + 82);
+        DrawSpriteExportOption(b, _exportFrontOption, I18n.SpriteExportFront, _spriteExportFacings.Contains(2));
+        DrawSpriteExportOption(b, _exportBackOption, I18n.SpriteExportBack, _spriteExportFacings.Contains(0));
+        DrawSpriteExportOption(b, _exportLeftOption, I18n.SpriteExportLeft, _spriteExportFacings.Contains(3));
+        DrawSpriteExportOption(b, _exportRightOption, I18n.SpriteExportRight, _spriteExportFacings.Contains(1));
+
+        DrawSpriteExportSection(b, I18n.SpriteExportSizes, modal.X + 42, modal.Y + 198);
+        DrawSpriteExportOption(b, _export1xOption, I18n.SpriteExport1x, _spriteExportScales.Contains(1));
+        DrawSpriteExportOption(b, _export2xOption, I18n.SpriteExport2x, _spriteExportScales.Contains(2));
+        DrawSpriteExportOption(b, _export4xOption, I18n.SpriteExport4x, _spriteExportScales.Contains(4));
+        DrawSpriteExportOption(b, _export6xOption, I18n.SpriteExport6x, _spriteExportScales.Contains(6));
+
+        string note = I18n.SpriteExportNote;
+        Vector2 noteSize = Game1.smallFont.MeasureString(note);
+        Utility.drawTextWithShadow(b, note, Game1.smallFont,
+            new Vector2(modal.Center.X - noteSize.X / 2f, modal.Y + 310), Color.DimGray);
+
+        DrawMenuButton(b, _cancelSpriteExportButton, I18n.ButtonCancel);
+        DrawMenuButton(b, _exportSpritesButton, I18n.ButtonExportSprite);
+    }
+
+    private static void DrawSpriteExportSection(SpriteBatch b, string label, int x, int y)
+        => Utility.drawTextWithShadow(b, label, Game1.smallFont, new Vector2(x, y), Game1.textColor);
+
+    private static void DrawSpriteExportOption(SpriteBatch b, Rectangle bounds, string label, bool selected)
+    {
+        bool hovered = bounds.Contains(Game1.getMouseX(), Game1.getMouseY());
+        drawTextureBox(b, Game1.mouseCursors, new Rectangle(432, 439, 9, 9),
+            bounds.X, bounds.Y, bounds.Width, bounds.Height,
+            selected ? Color.PaleGreen : hovered ? Color.Wheat : Color.White, 4f, drawShadow: false);
+
+        Rectangle checkbox = new(bounds.X + 10, bounds.Center.Y - 10, 20, 20);
+        b.Draw(Game1.mouseCursors, checkbox, new Rectangle(227, 425, 9, 9), Color.White);
+        if (selected)
+            b.Draw(Game1.mouseCursors, checkbox, new Rectangle(236, 425, 9, 9), Color.White);
+
+        Utility.drawTextWithShadow(b, label, Game1.smallFont,
+            new Vector2(bounds.X + 38, bounds.Center.Y - Game1.smallFont.MeasureString("A").Y / 2f),
+            Game1.textColor);
+    }
+
+    private void HandleSpriteExportClick(int x, int y)
+    {
+        if (_cancelSpriteExportButton.Contains(x, y))
+        {
+            _spriteExportOpen = false;
+            Game1.playSound("smallSelect");
+            return;
+        }
+
+        if (ToggleSpriteExportOption(x, y, _exportFrontOption, _spriteExportFacings, 2)
+            || ToggleSpriteExportOption(x, y, _exportBackOption, _spriteExportFacings, 0)
+            || ToggleSpriteExportOption(x, y, _exportLeftOption, _spriteExportFacings, 3)
+            || ToggleSpriteExportOption(x, y, _exportRightOption, _spriteExportFacings, 1)
+            || ToggleSpriteExportOption(x, y, _export1xOption, _spriteExportScales, 1)
+            || ToggleSpriteExportOption(x, y, _export2xOption, _spriteExportScales, 2)
+            || ToggleSpriteExportOption(x, y, _export4xOption, _spriteExportScales, 4)
+            || ToggleSpriteExportOption(x, y, _export6xOption, _spriteExportScales, 6))
+        {
+            Game1.playSound("smallSelect");
+            return;
+        }
+
+        if (!_exportSpritesButton.Contains(x, y))
+            return;
+
+        if (_spriteExportFacings.Count == 0 || _spriteExportScales.Count == 0)
+        {
+            Game1.addHUDMessage(new HUDMessage(I18n.ErrorSpriteExportSelection, HUDMessage.error_type));
+            Game1.playSound("cancel");
+            return;
+        }
+
+        string outfitName = _selectedOutfit ?? _renderer.ActiveOutfitName ?? "current-style";
+        string prefix = $"{MakeFileSafe(outfitName)}_{DateTime.Now:yyyyMMdd_HHmmss}";
+        bool exported = _renderer.TryExportSpriteFrames(
+            _spriteExportFacings, _spriteExportScales, _spriteExportDirectory, prefix,
+            out int count, out string? error);
+
+        if (!exported)
+        {
+            Game1.addHUDMessage(new HUDMessage(I18n.ErrorSpriteExportFailed, HUDMessage.error_type));
+            Game1.playSound("cancel");
+            return;
+        }
+
+        _spriteExportOpen = false;
+        Game1.addHUDMessage(new HUDMessage(I18n.MessageSpriteExported(count), HUDMessage.newQuest_type));
+        Game1.playSound("coin");
+    }
+
+    private static bool ToggleSpriteExportOption(int x, int y, Rectangle bounds, HashSet<int> values, int value)
+    {
+        if (!bounds.Contains(x, y)) return false;
+        if (!values.Add(value)) values.Remove(value);
+        return true;
+    }
+
+    private static string MakeFileSafe(string value)
+    {
+        foreach (char invalid in Path.GetInvalidFileNameChars()) value = value.Replace(invalid, '_');
+        return string.IsNullOrWhiteSpace(value) ? "outfit" : value.Trim();
     }
 
     private void DrawCompactShoeButton(SpriteBatch b, Rectangle bounds, string label, bool fashionSense)
@@ -3593,17 +3755,18 @@ internal sealed class ExpandedOutfitsMenu : IClickableMenu
         _saveCurrentStyleButton = new Rectangle(ox + Padding, saveY, 250, CategoryBarH);
 
         int createY = saveY + CategoryBarH + 6;
-        _createCategoryButton = new Rectangle(ox + Padding, createY, 180, CategoryBarH);
+        _createCategoryButton = new Rectangle(ox + Padding, createY, 230, CategoryBarH);
         _createButton          = _createCategoryButton;
 
         // Submenu items drop over the content below. They are handled before underlying buttons.
-        int subW = 260;
+        int subW = 380;
         int subY = createY + CategoryBarH + 10;
         _createSubNewCategory = new Rectangle(_createButton.X, subY, subW, CategoryBarH);
         _createSubNewTag      = new Rectangle(_createButton.X, subY + CategoryBarH + 4, subW, CategoryBarH);
         _createSubNewColorTag = new Rectangle(_createButton.X, subY + (CategoryBarH + 4) * 2, subW, CategoryBarH);
         _createSubExportOrganization = new Rectangle(_createButton.X, subY + (CategoryBarH + 4) * 3, subW, CategoryBarH);
         _createSubImportOrganization = new Rectangle(_createButton.X, subY + (CategoryBarH + 4) * 4, subW, CategoryBarH);
+        _createSubExportSprite = new Rectangle(_createButton.X, subY + (CategoryBarH + 4) * 5, subW, CategoryBarH);
 
         // Row 2: category tabs + action buttons (Select / Delete Category)
         int categoryBarY = createY + CategoryBarH + 6;
@@ -3693,6 +3856,22 @@ internal sealed class ExpandedOutfitsMenu : IClickableMenu
         _confirmNoButton  = new Rectangle(confirmModal.Center.X + 10,  confirmModal.Bottom - 72, 110, 48);
 
         _assignDoneButton = _equipButton;
+
+        Rectangle spriteExportModal = GetSpriteExportModalBounds();
+        const int optionW = 370;
+        const int optionH = 40;
+        int leftX = spriteExportModal.X + 60;
+        int rightX = spriteExportModal.Center.X + 30;
+        _exportFrontOption = new Rectangle(leftX, spriteExportModal.Y + 112, optionW, optionH);
+        _exportBackOption = new Rectangle(rightX, spriteExportModal.Y + 112, optionW, optionH);
+        _exportLeftOption = new Rectangle(leftX, spriteExportModal.Y + 158, optionW, optionH);
+        _exportRightOption = new Rectangle(rightX, spriteExportModal.Y + 158, optionW, optionH);
+        _export1xOption = new Rectangle(leftX, spriteExportModal.Y + 228, optionW, optionH);
+        _export2xOption = new Rectangle(rightX, spriteExportModal.Y + 228, optionW, optionH);
+        _export4xOption = new Rectangle(leftX, spriteExportModal.Y + 274, optionW, optionH);
+        _export6xOption = new Rectangle(rightX, spriteExportModal.Y + 274, optionW, optionH);
+        _cancelSpriteExportButton = new Rectangle(spriteExportModal.Center.X - 270, spriteExportModal.Bottom - 62, 220, 44);
+        _exportSpritesButton = new Rectangle(spriteExportModal.Center.X - 30, spriteExportModal.Bottom - 62, 300, 44);
 
         // Wire advanced filter panel layout (uses gridArea inline)
         _advancedPanel.SetData(_categories, _tags);
@@ -3999,6 +4178,17 @@ internal sealed class ExpandedOutfitsMenu : IClickableMenu
             Game1.uiViewport.Width  / 2 - mw / 2,
             Game1.uiViewport.Height / 2 - mh / 2,
             mw, mh);
+    }
+
+    private static Rectangle GetSpriteExportModalBounds()
+    {
+        const int modalWidth = 900;
+        const int modalHeight = 430;
+        return new Rectangle(
+            Game1.uiViewport.Width / 2 - modalWidth / 2,
+            Game1.uiViewport.Height / 2 - modalHeight / 2,
+            modalWidth,
+            modalHeight);
     }
 
     private Rectangle GetModalTextBoxBounds()

@@ -5,6 +5,7 @@ using StardewModdingAPI;
 using StardewModdingAPI.Events;
 using StardewValley;
 using StardewValley.BellsAndWhistles;
+using StardewValley.Locations;
 using StardewValley.Menus;
 using System;
 using System.Collections;
@@ -46,6 +47,7 @@ internal sealed class ModEntry : Mod
     private bool _scheduleEvaluationQueued;
     private int _scheduleEvaluationTicks;
     private int _scheduleEvaluationAttempts;
+    private bool _wasAtActiveFestival;
 
     // Quick-preview (legacy Ctrl+Click feature kept from the original mod)
     private bool    _quickPreviewOpen;
@@ -86,6 +88,7 @@ internal sealed class ModEntry : Mod
         helper.Events.GameLoop.DayStarted      += OnDayStarted;
         helper.Events.GameLoop.SaveLoaded      += OnSaveLoaded;
         helper.Events.GameLoop.TimeChanged     += OnTimeChanged;
+        helper.Events.GameLoop.UpdateTicked     += TrackActiveFestivalEnd;
         helper.Events.GameLoop.OneSecondUpdateTicked += OnOneSecondUpdateTicked;
         helper.Events.Player.Warped            += OnWarped;
     }
@@ -138,6 +141,15 @@ internal sealed class ModEntry : Mod
         // If the FS outfits menu closed, tear down quick-preview
         if (_quickPreviewOpen && !IsFashionSenseOutfitsMenu(e.NewMenu))
             CloseQuickPreview(restoreOriginal: true);
+
+        if ((IsFashionSenseOutfitsMenu(e.OldMenu) || e.OldMenu is ExpandedOutfitsMenu)
+            && !IsFashionSenseOutfitsMenu(e.NewMenu)
+            && e.NewMenu is not ExpandedOutfitsMenu
+            && Context.IsWorldReady
+            && !_renderer.IsPreviewActive)
+        {
+            _scheduleEvaluator.StopAfterManualChange();
+        }
 
         if (SuppressNextAutoOpen && IsFashionSenseOutfitsMenu(e.NewMenu))
         {
@@ -309,7 +321,8 @@ internal sealed class ModEntry : Mod
 
         var expanded = new ExpandedOutfitsMenu(_categoryManager, _tagManager, _organizationManager,
             _scheduleManager, _scheduleEvaluator, _scheduleConditionCatalog, _cosmeticShoeManager,
-            _renderer, outfitNames, fashionSenseMenu);
+            _renderer, outfitNames, fashionSenseMenu,
+            Path.Combine(Helper.DirectoryPath, "Exports"));
         Game1.activeClickableMenu = expanded;
 
         Game1.playSound("bigSelect");
@@ -318,10 +331,37 @@ internal sealed class ModEntry : Mod
     // Outfit schedules
 
     private void OnSaveLoaded(object? sender, SaveLoadedEventArgs e)
-        => QueueScheduleEvaluation();
+    {
+        _wasAtActiveFestival = false;
+        _scheduleEvaluator.ResetTracking();
+        QueueScheduleEvaluation();
+    }
 
     private void OnDayStarted(object? sender, DayStartedEventArgs e)
-        => QueueScheduleEvaluation();
+    {
+        _wasAtActiveFestival = false;
+        QueueScheduleEvaluation();
+    }
+
+    private void TrackActiveFestivalEnd(object? sender, UpdateTickedEventArgs e)
+    {
+        if (!Context.IsWorldReady || Game1.player?.currentLocation is null)
+            return;
+
+        if (Game1.player.currentLocation.currentEvent?.isFestival == true)
+        {
+            _wasAtActiveFestival = true;
+            return;
+        }
+
+        if (!_wasAtActiveFestival || Game1.eventUp
+            || Game1.player.currentLocation is not Farm and not FarmHouse)
+            return;
+
+        _wasAtActiveFestival = false;
+        _scheduleEvaluator.MarkActiveFestivalFinished();
+        QueueScheduleEvaluation();
+    }
 
     private void OnWarped(object? sender, WarpedEventArgs e)
     {

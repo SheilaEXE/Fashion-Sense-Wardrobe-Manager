@@ -5,6 +5,7 @@ using StardewValley;
 using System;
 using System.Collections.Generic;
 using System.Collections;
+using System.IO;
 using System.Linq;
 using System.Reflection;
 
@@ -830,6 +831,168 @@ internal sealed class OutfitPreviewRenderer
         BindingFlags flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
         return target.GetType().GetProperty(name, flags)?.GetValue(target)?.ToString()
             ?? target.GetType().GetField(name, flags)?.GetValue(target)?.ToString();
+    }
+
+    /// <summary>
+    /// Exports the appearance currently being rendered by Fashion Sense. This deliberately uses
+    /// the active preview transaction, so a saved outfit can be exported before it is equipped.
+    /// </summary>
+    public bool TryExportSpriteFrames(
+        IEnumerable<int> facingDirections,
+        IEnumerable<int> scales,
+        string exportDirectory,
+        string fileNamePrefix,
+        out int exportedCount,
+        out string? error)
+    {
+        exportedCount = 0;
+        error = null;
+
+        try
+        {
+            Directory.CreateDirectory(exportDirectory);
+
+            foreach (int facing in facingDirections.Distinct())
+            {
+                using Texture2D nativeFrame = RenderNativeSpriteFrame(facing);
+
+                foreach (int scale in scales.Distinct().Where(value => value is 1 or 2 or 4 or 6))
+                {
+                    using Texture2D output = CreateNearestNeighborScale(nativeFrame, scale);
+                    string path = Path.Combine(exportDirectory,
+                        $"{fileNamePrefix}_{GetFacingFileName(facing)}_{scale}x.png");
+
+                    using FileStream stream = File.Create(path);
+                    output.SaveAsPng(stream, output.Width, output.Height);
+                    exportedCount++;
+                }
+            }
+
+            return exportedCount > 0;
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+            _monitor.Log($"Could not export Fashion Sense sprite frames: {ex}", LogLevel.Warn);
+            return false;
+        }
+    }
+
+    private static string GetFacingFileName(int facingDirection) => facingDirection switch
+    {
+        0 => "back",
+        1 => "right",
+        2 => "front",
+        3 => "left",
+        _ => "unknown"
+    };
+
+    /// <summary>Renders one idle frame at Stardew's original 16 x 32 sprite resolution.</summary>
+    private static Texture2D RenderNativeSpriteFrame(int facingDirection)
+    {
+        const int spriteWidth = 16;
+        const int spriteHeight = 32;
+        const int gamePixelScale = 4;
+        const int previewWidth = 240;
+        const int previewHeight = 300;
+        const int previewSpriteWidth = spriteWidth * gamePixelScale;
+        const int previewSpriteHeight = spriteHeight * gamePixelScale;
+        const int previewX = (previewWidth - previewSpriteWidth) / 2;
+        const int previewY = previewHeight - previewSpriteHeight - 12;
+
+        Farmer who = Game1.player;
+        int savedFacing = who.FacingDirection;
+        int savedFrame = who.FarmerSprite.currentFrame;
+        GraphicsDevice graphicsDevice = Game1.graphics.GraphicsDevice;
+        RenderTargetBinding[] previousTargets = graphicsDevice.GetRenderTargets();
+
+        try
+        {
+            // FarmerRenderer positions its layers in the same 4x space used by the
+            // preview. Rendering directly to a 16x32 target only captured its corner.
+            using RenderTarget2D target = new(graphicsDevice, previewWidth, previewHeight,
+                false, SurfaceFormat.Color, DepthFormat.None);
+
+            who.faceDirection(facingDirection);
+            NormalizePreviewPose(who);
+            graphicsDevice.SetRenderTarget(target);
+            graphicsDevice.Clear(Color.Transparent);
+
+            using (SpriteBatch batch = new(graphicsDevice))
+            {
+                batch.Begin(SpriteSortMode.FrontToBack, BlendState.AlphaBlend, SamplerState.PointClamp);
+                FarmerRenderer.isDrawingForUI = true;
+                try
+                {
+                    // FarmerRenderer applies Stardew's normal 4x pixel zoom internally.
+                    // A quarter scale restores the original pixel dimensions for the PNG.
+                    who.FarmerRenderer.draw(
+                        batch,
+                        who.FarmerSprite.CurrentAnimationFrame,
+                        who.FarmerSprite.CurrentFrame,
+                        who.FarmerSprite.SourceRect,
+                        new Vector2(previewX, previewY),
+                        Vector2.Zero,
+                        1f,
+                        Color.White,
+                        0f,
+                        1f,
+                        who);
+                }
+                finally
+                {
+                    FarmerRenderer.isDrawingForUI = false;
+                }
+                batch.End();
+            }
+
+            graphicsDevice.SetRenderTargets(previousTargets);
+            Color[] previewPixels = new Color[previewWidth * previewHeight];
+            target.GetData(previewPixels);
+            Color[] pixels = new Color[spriteWidth * spriteHeight];
+            for (int y = 0; y < spriteHeight; y++)
+            for (int x = 0; x < spriteWidth; x++)
+                pixels[y * spriteWidth + x] = previewPixels[
+                    (previewY + y * gamePixelScale) * previewWidth + previewX + x * gamePixelScale];
+            Texture2D result = new(graphicsDevice, spriteWidth, spriteHeight);
+            result.SetData(pixels);
+            return result;
+        }
+        finally
+        {
+            // Always restore the UI's previous target, including if rendering or PNG
+            // preparation throws partway through. Leaving our temporary target active
+            // would make the rest of the menu render into a disposed texture.
+            graphicsDevice.SetRenderTargets(previousTargets);
+            who.faceDirection(savedFacing);
+            who.FarmerSprite.setCurrentSingleFrame(savedFrame);
+        }
+    }
+
+    private static Texture2D CreateNearestNeighborScale(Texture2D source, int scale)
+    {
+        if (scale == 1)
+        {
+            Color[] pixels = new Color[source.Width * source.Height];
+            source.GetData(pixels);
+            Texture2D copy = new(Game1.graphics.GraphicsDevice, source.Width, source.Height);
+            copy.SetData(pixels);
+            return copy;
+        }
+
+        Color[] sourcePixels = new Color[source.Width * source.Height];
+        source.GetData(sourcePixels);
+        int outputWidth = source.Width * scale;
+        int outputHeight = source.Height * scale;
+        Color[] outputPixels = new Color[outputWidth * outputHeight];
+
+        for (int y = 0; y < outputHeight; y++)
+        for (int x = 0; x < outputWidth; x++)
+            outputPixels[y * outputWidth + x] = sourcePixels[(y / scale) * source.Width + x / scale];
+
+        Texture2D output = new(Game1.graphics.GraphicsDevice, outputWidth, outputHeight);
+        output.SetData(outputPixels);
+        return output;
     }
 
     private static bool? GetMemberBool(object target, string name)

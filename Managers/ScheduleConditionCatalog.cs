@@ -114,6 +114,12 @@ internal sealed class ScheduleConditionCatalog
             new(ScheduleConditionIds.ActiveFestival("winter25"), I18n.ScheduleFestivalWinterStar)
         };
 
+        // Passive festivals which appear on the calendar are special days that the
+        // game itself treats as festivals. Keep them visible with the built-in
+        // list, even when they were added by another mod (e.g. SVE's Community
+        // Day), so a player can make a specific schedule for them.
+        AddCalendarPassiveFestivals(options);
+
         if (includeCustom)
         {
             AddCustomActiveFestivals(options);
@@ -178,11 +184,11 @@ internal sealed class ScheduleConditionCatalog
     {
         try
         {
-            foreach (string festivalId in DataLoader.PassiveFestivals(Game1.content).Keys)
+            foreach ((string festivalId, var festival) in DataLoader.PassiveFestivals(Game1.content))
             {
                 string id = ScheduleConditionIds.PassiveFestival(festivalId);
                 if (!options.Any(option => option.Id.Equals(id, StringComparison.OrdinalIgnoreCase)))
-                    options.Add(new ScheduleConditionOption(id, Humanize(festivalId)));
+                    options.Add(new ScheduleConditionOption(id, FestivalLabel(festivalId, festival.DisplayName)));
             }
         }
         catch
@@ -190,6 +196,29 @@ internal sealed class ScheduleConditionCatalog
             // A malformed custom passive festival shouldn't hide the vanilla list.
         }
     }
+
+    private static void AddCalendarPassiveFestivals(List<ScheduleConditionOption> options)
+    {
+        try
+        {
+            foreach ((string festivalId, var festival) in DataLoader.PassiveFestivals(Game1.content))
+            {
+                if (!festival.ShowOnCalendar)
+                    continue;
+
+                string id = ScheduleConditionIds.PassiveFestival(festivalId);
+                if (!options.Any(option => option.Id.Equals(id, StringComparison.OrdinalIgnoreCase)))
+                    options.Add(new ScheduleConditionOption(id, FestivalLabel(festivalId, festival.DisplayName)));
+            }
+        }
+        catch
+        {
+            // A malformed passive festival shouldn't prevent the vanilla list opening.
+        }
+    }
+
+    private static string FestivalLabel(string festivalId, string? displayName)
+        => string.IsNullOrWhiteSpace(displayName) ? Humanize(festivalId) : displayName;
 
     private static bool LooksLikeFestivalDate(string value)
     {

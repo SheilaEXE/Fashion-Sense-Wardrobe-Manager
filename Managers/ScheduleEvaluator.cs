@@ -9,11 +9,14 @@ namespace FashionSenseWardrobeManager;
 
 internal sealed class ScheduleEvaluator
 {
+    private const string FinishedFestivalDayKey = "FashionSenseWardrobeManager.FinishedActiveFestivalDay";
     private readonly ScheduleManager _manager;
     private readonly TagManager _tagManager;
     private readonly OutfitPreviewRenderer _renderer;
     private readonly IMonitor _monitor;
     private readonly Random _random = new();
+    private string? _managedRuleId;
+    private string? _managedOutfitName;
 
     public ScheduleEvaluator(ScheduleManager manager, TagManager tagManager, OutfitPreviewRenderer renderer, IMonitor monitor)
     {
@@ -96,8 +99,12 @@ internal sealed class ScheduleEvaluator
             outfitName = choices[_random.Next(choices.Count)];
         }
 
-        if (_renderer.EquipOutfitImmediately(outfitName))
+        bool alreadyEquipped = !_renderer.IsPreviewActive
+            && outfitName.Equals(GetCurrentOutfitName(), StringComparison.OrdinalIgnoreCase);
+        if (alreadyEquipped || _renderer.EquipOutfitImmediately(outfitName))
         {
+            _managedRuleId = selectedRule.Id;
+            _managedOutfitName = outfitName;
             if (!selectedRule.UsedOutfitNames.Contains(outfitName, StringComparer.OrdinalIgnoreCase))
             {
                 selectedRule.UsedOutfitNames.Add(outfitName);
@@ -127,11 +134,56 @@ internal sealed class ScheduleEvaluator
 
             if (selectionStateChanged)
                 _manager.SaveRules(rules);
-            _monitor.Log($"Schedule equipped Fashion Sense outfit '{outfitName}'.", LogLevel.Trace);
+            if (!alreadyEquipped)
+                _monitor.Log($"Schedule equipped Fashion Sense outfit '{outfitName}'.", LogLevel.Trace);
             return true;
         }
 
         return false;
+    }
+
+    public void ResetTracking()
+    {
+        _managedRuleId = null;
+        _managedOutfitName = null;
+    }
+
+    public void MarkActiveFestivalFinished()
+    {
+        Game1.player.modData[FinishedFestivalDayKey] = GetCurrentDayKey();
+    }
+
+    private static bool ActiveFestivalFinishedToday()
+        => Game1.player.modData.TryGetValue(FinishedFestivalDayKey, out string? dayKey)
+            && dayKey == GetCurrentDayKey();
+
+    public void StopAfterManualChange()
+    {
+        if (_managedRuleId is null || _managedOutfitName is null
+            || _managedOutfitName.Equals(GetCurrentOutfitName(), StringComparison.OrdinalIgnoreCase))
+            return;
+
+        List<OutfitScheduleRule> rules = _manager.LoadRules();
+        OutfitScheduleRule? managedRule = rules.FirstOrDefault(rule => rule.Id == _managedRuleId);
+        if (managedRule?.Enabled == true)
+        {
+            managedRule.Enabled = false;
+            _manager.SaveRules(rules);
+            _monitor.Log($"Paused outfit schedule '{managedRule.Name}' after a manual outfit change.", LogLevel.Info);
+        }
+
+        ResetTracking();
+    }
+
+    private static string? GetCurrentOutfitName()
+    {
+        if (Game1.player.modData.TryGetValue("FashionSense.Outfit.CurrentId", out string? currentId)
+            && !string.IsNullOrWhiteSpace(currentId))
+            return currentId;
+
+        return Game1.player.modData.TryGetValue("FashionSense.CurrentOutfit", out string? name)
+            ? name
+            : null;
     }
 
     private static string GetCurrentDayKey()
@@ -218,7 +270,7 @@ internal sealed class ScheduleEvaluator
         if (festivalIds.Count > 0)
             return festivalIds.Any(IsFestivalActiveToday);
 
-        if (Utility.isFestivalDay(Game1.dayOfMonth, Game1.season))
+        if (!ActiveFestivalFinishedToday() && Utility.isFestivalDay(Game1.dayOfMonth, Game1.season))
             return true;
 
         try
@@ -238,6 +290,7 @@ internal sealed class ScheduleEvaluator
             string date = id[ScheduleConditionIds.ActiveFestivalPrefix.Length..];
             string today = $"{Game1.currentSeason}{Game1.dayOfMonth}";
             return date.Equals(today, StringComparison.OrdinalIgnoreCase)
+                && !ActiveFestivalFinishedToday()
                 && Utility.isFestivalDay(Game1.dayOfMonth, Game1.season);
         }
 
